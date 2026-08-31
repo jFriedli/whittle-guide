@@ -26,6 +26,15 @@ function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+/** Shrink font (then clip) so the label fits `maxW` mm. */
+function fitLabel(text: string, maxW: number, preferredFs: number): { fs: number; text: string } {
+  const charW = 0.62;
+  let fs = Math.min(preferredFs, maxW / (text.length * charW));
+  fs = Math.max(fs, 1.9);
+  const maxChars = Math.floor(maxW / (fs * charW));
+  return { fs: Math.round(fs * 100) / 100, text: clip(text, Math.max(6, maxChars)) };
+}
+
 function pathFrom(polylines: number[][][], flipY: number): string {
   return polylines
     .map((line) => line.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${(flipY - y).toFixed(2)}`).join(' '))
@@ -66,19 +75,30 @@ export function buildTemplateSvg(input: TemplateInput): string {
     <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#c07a3a" stroke-width="0.3" stroke-dasharray="2 1.5"/>
     <path d="${pathFrom(input.outline, flipY)}" fill="#e7d8bf" fill-opacity="0.55" stroke="#3c2f1e" stroke-width="0.6" stroke-linejoin="round"/>
     ${contourPaths}
-    ${input.title ? `<text x="0" y="${h + 8}" font-size="3.2" font-weight="600" fill="#3c2f1e">${escapeXml(clip(input.title, Math.max(18, Math.floor(w / 1.5))))}</text>` : ''}
-    <text x="0" y="${h + (input.title ? 12.5 : 8)}" font-size="2.7" fill="#5b4a33">${escapeXml(input.subtitle ?? `${w.toFixed(0)} × ${h.toFixed(0)} mm — print at 100% (Actual Size)`)}</text>
+    ${(() => {
+      const avail = w + MARGIN - 1;
+      const sub = input.subtitle ?? `${w.toFixed(0)} × ${h.toFixed(0)} mm — print at 100% (Actual Size)`;
+      const t = input.title ? fitLabel(input.title, avail, 3.2) : null;
+      const s = fitLabel(sub, avail, 2.6);
+      return (
+        (t ? `<text x="0" y="${h + 7.5}" font-size="${t.fs}" font-weight="600" fill="#3c2f1e">${escapeXml(t.text)}</text>` : '') +
+        `<text x="0" y="${h + (t ? 12 : 7.5)}" font-size="${s.fs}" fill="#5b4a33">${escapeXml(s.text)}</text>`
+      );
+    })()}
     <text x="${w}" y="-3.5" font-size="3.6" font-weight="700" fill="#3c2f1e" text-anchor="end">${escapeXml(String(input.view).toUpperCase())}</text>
   </g>
 </svg>`;
 }
 
 export function calibrationSvg(sizeMm = 50): string {
-  const t = sizeMm + 20;
-  return `<svg xmlns="${NS}" width="${t}mm" height="${t}mm" viewBox="0 0 ${t} ${t}" font-family="system-ui, sans-serif">
-  <rect x="10" y="10" width="${sizeMm}" height="${sizeMm}" fill="none" stroke="#000" stroke-width="0.5"/>
-  <text x="${10 + sizeMm / 2}" y="${10 + sizeMm / 2}" font-size="4" text-anchor="middle" dominant-baseline="middle">${sizeMm} mm</text>
-  <text x="10" y="${sizeMm + 18}" font-size="3">Measure this square after printing. It must be exactly ${sizeMm} mm. Print at 100% / Actual Size — never "Fit to page".</text>
+  const w = sizeMm + 28;
+  const h = sizeMm + 34;
+  return `<svg xmlns="${NS}" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}" font-family="system-ui, sans-serif">
+  <rect x="10" y="8" width="${sizeMm}" height="${sizeMm}" fill="none" stroke="#000" stroke-width="0.5"/>
+  <text x="${10 + sizeMm / 2}" y="${8 + sizeMm / 2}" font-size="4" text-anchor="middle" dominant-baseline="middle">${sizeMm} mm</text>
+  <text x="2" y="${sizeMm + 18}" font-size="2.6">Measure this square after printing —</text>
+  <text x="2" y="${sizeMm + 22.5}" font-size="2.6">it must be exactly ${sizeMm} mm.</text>
+  <text x="2" y="${sizeMm + 28}" font-size="2.6">Print at 100% / "Actual Size", never "Fit to page".</text>
 </svg>`;
 }
 

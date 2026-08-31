@@ -37,7 +37,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
       heightMm: proj.heightMm,
       outline: proj.outline,
       title: `${project.title} — ${v.toUpperCase()}`,
-      subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm · print at 100% (Actual Size)`,
+      subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm · print 100%`,
     });
     return `<section class="page"><h2>Template — ${v.toUpperCase()}</h2>${svg}</section>`;
   }).join('\n');
@@ -53,7 +53,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
         outline: proj.outline,
         contours: c.levels,
         title: `${project.title} — ${c.view.toUpperCase()} depth contours (${c.intervalMm} mm)`,
-        subtitle: `Each line is ${c.intervalMm} mm deeper than the last, measured from the ${c.view} face.`,
+        subtitle: `${c.intervalMm} mm per line, from the ${c.view} face`,
       });
       return `<section class="page"><h2>Depth contours — ${c.view.toUpperCase()}</h2>${svg}</section>`;
     })
@@ -81,7 +81,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
           heightMm: proj.heightMm,
           outline: proj.outline,
           title: `Stage ${s.index}: ${s.name}`,
-          subtitle: `Aim to stay ~${s.marginMm.toFixed(1)} mm outside the final outline.`,
+          subtitle: `Stay ~${s.marginMm.toFixed(1)} mm outside the final line`,
         });
       }
       return `<section class="page stage">
