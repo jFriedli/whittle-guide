@@ -11,10 +11,15 @@ import {
   Mesh,
   Box3,
   Vec3,
+  Mat4,
   computeBounds,
   boxSize,
   boxCenter,
   triangleCount,
+  identity,
+  multiply,
+  translation,
+  scaling,
 } from './mesh';
 
 export type UpAxis = 'x' | 'y' | 'z';
@@ -34,6 +39,21 @@ export interface NormalizeResult {
   mesh: Mesh;
   bounds: Box3;
   report: NormalizeReport;
+  /** Raw-model-space → normalised-space matrix (mirrors what was baked into `mesh`). */
+  matrix: Mat4;
+}
+
+function reorientMatrix(up: UpAxis): Mat4 {
+  const m = identity();
+  if (up === 'z') {
+    // (x,y,z) -> (x, z, -y)
+    return [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1];
+  }
+  if (up === 'x') {
+    // (x,y,z) -> (-y, x, z)
+    return [0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  }
+  return m;
 }
 
 const triArea = (
@@ -222,9 +242,17 @@ export function normalizeMesh(input: Mesh, opts: NormalizeOptions = {}): Normali
 
   const result: Mesh = { positions: out };
   const bounds = computeBounds(result);
+
+  const reorient = opts.reorientUp && guessedUp !== 'y' ? reorientMatrix(guessedUp) : identity();
+  const matrix = multiply(
+    reorient,
+    multiply(scaling(unitScale, unitScale, unitScale), translation(-c0[0], -c0[1], -c0[2])),
+  );
+
   return {
     mesh: result,
     bounds,
+    matrix,
     report: {
       inputTriangles,
       outputTriangles: triangleCount(result),

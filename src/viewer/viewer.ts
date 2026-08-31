@@ -1,0 +1,248 @@
+/**
+ * Interactive 3D workspace: the model inside a translucent wooden blank, with
+ * orbit/pan/zoom, labelled axes and several visualisation modes.
+ */
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Blank } from '../geometry/blank';
+import { Mat4 } from '../geometry/mesh';
+import { buildVoxelGeometry, VoxelDims } from './voxelMesh';
+
+export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section';
+
+export interface StageGrid {
+  data: Uint8Array;
+  removed: Uint8Array | null;
+}
+
+const WOOD = 0xc8a06a;
+
+export class Viewer {
+  readonly scene = new THREE.Scene();
+  private camera: THREE.PerspectiveCamera;
+  private renderer: THREE.WebGLRenderer;
+  private controls: OrbitControls;
+  private container: HTMLElement;
+
+  private modelPivot = new THREE.Group(); // raw-model -> blank space
+  private modelObject: THREE.Object3D | null = null;
+  private blankMesh: THREE.Mesh;
+  private blankEdges: THREE.LineSegments;
+  private centerLines: THREE.LineSegments;
+  private stageMesh: THREE.Mesh | null = null;
+  private removeMesh: THREE.Mesh | null = null;
+  private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+
+  private blank: Blank = { width: 40, height: 100, depth: 40 };
+  private mode: ViewMode = 'blankModel';
+  private raf = 0;
+  private ro: ResizeObserver;
+
+  constructor(container: HTMLElement) {
+    this.container = container;
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 600;
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    this.renderer.setSize(w, h);
+    this.renderer.localClippingEnabled = true;
+    container.appendChild(this.renderer.domElement);
+
+    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
+    this.camera.position.set(150, 120, 220);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    key.position.set(120, 200, 160);
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0xbcd4ff, 0.5);
+    fill.position.set(-160, 60, -120);
+    this.scene.add(fill);
+
+    const grid = new THREE.GridHelper(400, 20, 0x8a8f98, 0x30343c);
+    (grid.material as THREE.Material).opacity = 0.35;
+    (grid.material as THREE.Material).transparent = true;
+    grid.position.y = -0.01;
+    this.scene.add(grid);
+    this.scene.add(new THREE.AxesHelper(35));
+
+    this.scene.add(this.modelPivot);
+
+    // Blank
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    this.blankMesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshStandardMaterial({
+        color: WOOD, transparent: true, opacity: 0.16, roughness: 0.9,
+        depthWrite: false, side: THREE.DoubleSide,
+      }),
+    );
+    this.scene.add(this.blankMesh);
+    this.blankEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0x6b4f2f }),
+    );
+    this.scene.add(this.blankEdges);
+
+    this.centerLines = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({ color: 0x9aa4b2, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.6 }),
+    );
+    this.scene.add(this.centerLines);
+
+    this.applyBlank();
+    this.applyMode();
+
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(container);
+    this.loop();
+  }
+
+  private loop = () => {
+    this.raf = requestAnimationFrame(this.loop);
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+  };
+
+  private resize() {
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  }
+
+  setModel(object: THREE.Object3D) {
+    if (this.modelObject) this.modelPivot.remove(this.modelObject);
+    this.modelObject = object;
+    this.modelPivot.add(object);
+    this.applyMode();
+  }
+
+  /** Matrix mapping raw model space to blank space (normalise ∘ placement). */
+  setModelMatrix(m: Mat4) {
+    this.modelPivot.matrixAutoUpdate = false;
+    this.modelPivot.matrix.fromArray(m);
+    this.modelPivot.matrixWorldNeedsUpdate = true;
+  }
+
+  setBlank(blank: Blank) {
+    this.blank = blank;
+    this.applyBlank();
+  }
+
+  private applyBlank() {
+    const { width, height, depth } = this.blank;
+    this.blankMesh.scale.set(width, height, depth);
+    this.blankEdges.scale.set(width, height, depth);
+    const hx = width / 2, hy = height / 2, hz = depth / 2;
+    const pts = [
+      -hx, 0, 0, hx, 0, 0,
+      0, -hy, 0, 0, hy, 0,
+      0, 0, -hz, 0, 0, hz,
+    ];
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    this.centerLines.geometry.dispose();
+    this.centerLines.geometry = g;
+    this.centerLines.computeLineDistances();
+    this.clipPlane.constant = 0;
+  }
+
+  setMode(mode: ViewMode) {
+    this.mode = mode;
+    this.applyMode();
+  }
+
+  private applyMode() {
+    const m = this.mode;
+    const showModel = m === 'model' || m === 'blankModel' || m === 'wireframe' || m === 'section' || m === 'remove';
+    const showBlank = m === 'blankModel' || m === 'section';
+    if (this.modelObject) {
+      this.modelObject.visible = showModel;
+      this.modelObject.traverse((c) => {
+        const mm = c as THREE.Mesh;
+        if (!mm.isMesh) return;
+        const mat = mm.material as THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[];
+        const list = Array.isArray(mat) ? mat : [mat];
+        for (const x of list) {
+          x.wireframe = m === 'wireframe';
+          x.clippingPlanes = m === 'section' ? [this.clipPlane] : [];
+          x.transparent = m === 'remove';
+          x.opacity = m === 'remove' ? 0.35 : 1;
+          x.needsUpdate = true;
+        }
+      });
+    }
+    this.blankMesh.visible = showBlank || m === 'remove' || m === 'stage';
+    (this.blankMesh.material as THREE.Material).opacity = m === 'stage' || m === 'remove' ? 0.06 : 0.16;
+    this.blankEdges.visible = true;
+    if (this.stageMesh) this.stageMesh.visible = m === 'stage';
+    if (this.removeMesh) this.removeMesh.visible = m === 'remove' || m === 'stage';
+  }
+
+  setStage(grid: StageGrid | null, dims: VoxelDims) {
+    if (this.stageMesh) {
+      this.scene.remove(this.stageMesh);
+      this.stageMesh.geometry.dispose();
+      this.stageMesh = null;
+    }
+    if (this.removeMesh) {
+      this.scene.remove(this.removeMesh);
+      this.removeMesh.geometry.dispose();
+      this.removeMesh = null;
+    }
+    if (!grid) {
+      this.applyMode();
+      return;
+    }
+    this.stageMesh = new THREE.Mesh(
+      buildVoxelGeometry(grid.data, dims),
+      new THREE.MeshStandardMaterial({ color: WOOD, roughness: 0.95, flatShading: true }),
+    );
+    this.scene.add(this.stageMesh);
+    if (grid.removed) {
+      this.removeMesh = new THREE.Mesh(
+        buildVoxelGeometry(grid.removed, dims),
+        new THREE.MeshStandardMaterial({
+          color: 0xd6584a, transparent: true, opacity: 0.55, roughness: 0.8,
+          side: THREE.DoubleSide, flatShading: true,
+        }),
+      );
+      this.scene.add(this.removeMesh);
+    }
+    this.applyMode();
+  }
+
+  setSection(fraction: number) {
+    // slide the clip plane through depth
+    this.clipPlane.constant = (fraction - 0.5) * this.blank.depth;
+  }
+
+  resetCamera() {
+    const r = Math.max(this.blank.width, this.blank.height, this.blank.depth);
+    this.camera.position.set(r * 1.6, r * 1.3, r * 2.2);
+    this.controls.target.set(0, 0, 0);
+    this.controls.update();
+  }
+
+  snapshot(): string {
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement.toDataURL('image/png');
+  }
+
+  dispose() {
+    cancelAnimationFrame(this.raf);
+    this.ro.disconnect();
+    this.controls.dispose();
+    this.renderer.dispose();
+    this.renderer.domElement.remove();
+  }
+}
