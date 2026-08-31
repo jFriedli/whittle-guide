@@ -94,9 +94,31 @@ export class App {
       };
       this.enterWorkspace(loaded, source);
     } catch (e) {
-      toast(`Could not load "${obj.title}": ${(e as Error).message}`, 'error');
-      this.show('home');
+      const msg = (e as Error).message;
+      const networkish = /failed|fetch|network|load|cors|blocked|\b\d{3}\b/i.test(msg);
+      this.showLoadError(obj, networkish ? msg : msg);
     }
+  }
+
+  private showLoadError(obj: MuseumObject, detail: string) {
+    clear(this.main);
+    this.main.append(
+      el('div', { class: 'loaderror' }, [
+        el('h2', {}, [`Couldn't load “${obj.title}”`]),
+        el('p', {}, [detail]),
+        el('p', { class: 'muted' }, [
+          'The model file is fetched directly from ',
+          el('a', { href: obj.sourceUrl ?? 'https://3d.si.edu', target: '_blank', rel: 'noopener' }, ['the museum']),
+          '. This usually means a temporary network problem or that your connection blocks the request. The rest of WhittleGuide works offline.',
+        ]),
+        el('div', { class: 'btnrow' }, [
+          (() => { const b = el('button', { class: 'btn btn--primary' }, ['Try again']); b.addEventListener('click', () => this.openMuseum(obj)); return b; })(),
+          (() => { const b = el('button', { class: 'btn' }, ['Open a demo model']); b.addEventListener('click', () => this.openDemo('figure')); return b; })(),
+          (() => { const b = el('button', { class: 'btn' }, ['Upload a file']); b.addEventListener('click', () => this.pickFile()); return b; })(),
+          (() => { const b = el('button', { class: 'btn' }, ['Back to library']); b.addEventListener('click', () => this.show('home')); return b; })(),
+        ]),
+      ]),
+    );
   }
 
   private openDemo(id: string) {

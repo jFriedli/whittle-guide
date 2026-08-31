@@ -1,0 +1,53 @@
+name: Refresh museum catalogue
+
+# The curated Smithsonian CC0 catalogue (src/museum/catalogue.generated.json)
+# holds resolved GLB / preview URLs. Those URLs are stable but not permanent, so
+# this job re-resolves them weekly and pushes an update if anything changed.
+# A push to main then triggers the normal deploy.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Regenerate catalogue
+        env:
+          # Optional: a data.gov key enables CC0 verification via the Open Access API.
+          SI_API_KEY: ${{ secrets.SI_API_KEY }}
+        run: |
+          if [ -n "$SI_API_KEY" ]; then
+            npm run catalogue -- --enrich
+          else
+            npm run catalogue
+          fi
+
+      - name: Sanity-check build with the new catalogue
+        run: npm run build
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- src/museum/catalogue.generated.json; then
+            echo "Catalogue unchanged."
+            exit 0
+          fi
+          git config user.name "whittleguide-bot"
+          git config user.email "actions@github.com"
+          git add src/museum/catalogue.generated.json
+          git commit -m "chore: refresh Smithsonian catalogue URLs [skip ci-check]"
+          git push
