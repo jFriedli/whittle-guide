@@ -51,8 +51,10 @@ Smithsonian; **uploaded files never leave your device**.
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
 | **Rust → WASM geometry kernel** (voxelisation + distance transform), ~10× faster, with JS fallback | ✅ |
-| Vector-quality silhouettes (high-res projected-triangle raster, independent of voxel grid) | ✅ |
+| Vector-quality silhouettes + high-res depth maps + contours (triangle raster, independent of the voxel grid) | ✅ |
+| Smoothed 3-D carving-stage preview (Surface Nets isosurface, not voxel cubes) | ✅ |
 | Weekly CI refresh of the Smithsonian catalogue URLs | ✅ |
+| Museum load-failure recovery screen (retry / demo / upload) | ✅ |
 | Europeana provider | ⚙️ scaffolded, opt-in via API key (see §5) |
 | PDF export | ➖ use the browser's "Save as PDF" from the guide (deliberately not a fake button) |
 | Knife/tool-path planning, grain awareness | ❌ future work (see §12) |
@@ -73,9 +75,11 @@ src/
   viewer/         three.js scene, model loaders, voxel→mesh, demo models
   geometry/       PURE, three.js-free, unit-tested pipeline
     mesh.ts normalize.ts blank.ts voxelize.ts distance.ts
-    projection.ts depthMap.ts contours.ts marchingSquares.ts
+    projection.ts contours.ts marchingSquares.ts
     carvingStages.ts carvability.ts roughCuts.ts analysis.ts
-    silhouette.ts        high-res vector silhouette tracing
+    viewGeometry.ts      one source of truth: view → face-frame mapping
+    silhouette.ts        high-res vector silhouette tracing (triangle raster)
+    depthField.ts        high-res orthographic depth maps (triangle z-buffer)
     wasm/                loader + typed wrapper for the Rust kernel
   workers/        analysis.worker.ts + main-thread client
   export/         SVG templates, printable guide
@@ -144,17 +148,20 @@ The app is fully functional without Europeana.
 
 ```
 placed mesh (blank space)
-  → solid voxelisation        3-axis parity fill, majority vote (robust to holes)
-  → orthographic projections  6 silhouettes + marching-squares outlines
-  → depth maps                first solid voxel from each face, quantised to 1 mm
-  → contour maps              marching squares on the depth field, 2/5/10 mm
-  → carving stages            nested envelopes (see §7)
-  → carvability report        undercuts, thin features, symmetry, recesses, …
-  → experimental rough cuts    safe whole-slab straight cuts
+  ├─ triangle raster ──→ silhouettes   ~0.1 mm/px + Douglas–Peucker  (6 faces)
+  │                  └─→ depth maps    ~300 px/face z-buffer, quantised 1 mm (4 faces)
+  │                         └─→ contour maps   marching squares, 2/5/10 mm
+  └─ solid voxelisation (WASM)  3-axis parity fill, majority vote, ~84 cells
+         ├─ carving stages       nested envelopes, invariant-checked (see §7)
+         │      └─ 3-D preview    Surface Nets isosurface (smoothed)
+         ├─ carvability report    undercuts, thin features, symmetry, recesses, …
+         └─ experimental rough cuts   safe whole-slab straight cuts
 ```
 
-Voxel resolution is bounded (~60 cells on the longest blank axis). A
-40-million-triangle scan is never analysed at full resolution.
+The silhouette / depth / contour raster resolution is independent of the voxel
+grid, so templates stay sharp. Voxel resolution is bounded (~84 cells on the
+longest blank axis). A 40-million-triangle scan is simplified to ≤40 k triangles
+before any of this.
 
 ## 7. Carving-stage algorithm
 
@@ -190,15 +197,16 @@ Per-stage instructions are generated from *which* constraint was applied and the
 
 ## 8. Limitations
 
-- Depth maps, contour maps and the carving-stage volumes run on a **voxel grid**
-  (~60³–60×150×60). Fine detail below the voxel size is lost there; depth values
-  are quantised (default 1 mm) on purpose. (Template outlines are *not* limited by
-  this — see below.)
-- Template silhouettes are traced from a high-resolution raster of the projected
-  triangles (~0.1 mm/pixel) and Douglas–Peucker-simplified — crisp and
-  voxel-independent, though still a fine raster rather than an exact polygon
-  boolean of the triangles.
-- Contour lines are still voxel-grid resolution (they derive from the depth map).
+- **Templates, depth maps and contours** are rasterised straight from the placed
+  triangles (silhouettes ~0.1 mm/pixel, depth ~300 px/face) and
+  Douglas–Peucker-simplified — crisp and independent of the voxel grid. They're
+  still a fine raster rather than an exact polygon boolean of the triangles, and
+  depth is quantised (default 1 mm) on purpose.
+- The **carving-stage volumes** and the carvability metrics do run on a voxel
+  grid (~84 cells on the long axis). The 3-D stage preview is a smoothed
+  isosurface (Surface Nets + field blur + Laplacian) of that grid, so it reads as
+  carved wood rather than voxels; the underlying stage data is still grid
+  resolution.
 - Mesh simplification is **vertex clustering**, not quadric decimation — good
   enough for silhouettes/depth/voxels, not for display-quality reduction.
 - "Up axis" detection is a heuristic; use the orientation buttons if it guesses
@@ -246,7 +254,8 @@ results:
 - normalised dimensions, degenerate-triangle removal, simplification;
 - auto-fit (fits inside blank, preserves aspect ratio, respects margin);
 - voxel volume vs analytic volume for cube / sphere;
-- projection extents, depth values, contour nesting;
+- projection extents, depth values (incl. front/back measured from opposite
+  faces), contour nesting;
 - **`blank ⊇ stage₁ ⊇ … ⊇ final` for cube / sphere / cone / pawn**;
 - safety-margin monotonicity;
 - disconnected-part detection;
