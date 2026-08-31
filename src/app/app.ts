@@ -151,7 +151,7 @@ export class App {
     clear(this.main);
     this.workspace = new Workspace(loaded, source, this.client);
     this.main.append(this.workspace.root);
-    this.workspace.mount();
+    void this.workspace.mount();
   }
 
   private onKey(e: KeyboardEvent) {

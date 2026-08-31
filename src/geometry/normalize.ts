@@ -21,6 +21,7 @@ import {
   translation,
   scaling,
 } from './mesh';
+import { simplifyMesh } from './simplify';
 
 export type UpAxis = 'x' | 'y' | 'z';
 
@@ -204,7 +205,18 @@ export function normalizeMesh(input: Mesh, opts: NormalizeOptions = {}): Normali
 
   let mesh = deg.mesh;
   const simplified = triangleCount(mesh) > maxTriangles;
-  if (simplified) mesh = simplifyByClustering(mesh, maxTriangles);
+  if (simplified) {
+    // Quadric edge-collapse is O(n log n); for enormous scans, cluster once to a
+    // manageable size first so it stays interactive, then decimate properly.
+    if (triangleCount(mesh) > 6 * maxTriangles) {
+      mesh = simplifyByClustering(mesh, 6 * maxTriangles);
+    }
+    mesh = simplifyMesh(mesh, maxTriangles);
+    // Vertex-clustering fallback if QEM somehow undershot the target badly.
+    if (triangleCount(mesh) > maxTriangles * 1.5) {
+      mesh = simplifyByClustering(mesh, maxTriangles);
+    }
+  }
 
   // Recentre to origin and scale so the largest dimension is `targetSize` mm.
   const b0 = computeBounds(mesh);

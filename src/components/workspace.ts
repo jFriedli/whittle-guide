@@ -1,12 +1,12 @@
 import { el, clear, toast, fmtMm } from '../app/dom';
 import { Viewer, ViewMode } from '../viewer/viewer';
 import { LoadedModel } from '../viewer/loaders';
-import { normalizeMesh, NormalizeResult } from '../geometry/normalize';
+import type { NormalizeReport } from '../geometry/normalize';
 import {
   Blank, Placement, defaultBlank, autoFit, placementMatrix, defaultPlacement, rotatedBoxSize,
 } from '../geometry/blank';
-import { applyMatrix4, multiply, boxSize, Vec3 } from '../geometry/mesh';
-import { AnalysisClient } from '../workers/analysisClient';
+import { applyMatrix4, multiply, boxSize, Box3, Vec3 } from '../geometry/mesh';
+import { AnalysisClient, PreparedMesh } from '../workers/analysisClient';
 import { AnalysisResult } from '../geometry/analysis';
 import { renderPanel, PanelTab, stageRemovedMask } from './panels';
 import { buildGuideHtml } from '../export/guide';
@@ -36,7 +36,7 @@ export class Workspace {
   readonly root: HTMLElement;
   private viewer!: Viewer;
   private client: AnalysisClient;
-  private norm: NormalizeResult;
+  private norm: { mesh: { positions: Float32Array }; bounds: Box3; matrix: number[]; report: NormalizeReport } | null = null;
   private source: ProjectSource;
   private loaded: LoadedModel;
 
@@ -65,11 +65,8 @@ export class Workspace {
     this.loaded = loaded;
     this.source = source;
     this.client = client;
-    this.norm = normalizeMesh(loaded.mesh, { targetSize: 100, maxTriangles: 40000, reorientUp: true });
     this.root = el('div', { class: 'workspace' });
     this.build();
-    this.applyPlacement();
-    this.recompute(true);
   }
 
   private build() {
@@ -136,13 +133,35 @@ export class Workspace {
     // Instantiate viewer after host is in DOM-ish; caller appends root then calls mount()
   }
 
-  mount() {
+  async mount() {
     this.viewer = new Viewer(this.viewerHost);
     this.viewer.setModel(this.loaded.object);
     this.viewer.setBlank(this.blank);
     this.viewer.setMode(this.viewMode);
-    this.applyPlacement();
     this.viewer.resetCamera();
+
+    clear(this.panelHost);
+    this.panelHost.append(
+      el('div', { class: 'panel panel--loading' }, [
+        el('span', { class: 'spinner' }),
+        ` Preparing ${this.loaded.triangleCount.toLocaleString()}-triangle mesh (clean · decimate · orient)…`,
+      ]),
+    );
+
+    try {
+      const prep: PreparedMesh = await this.client.prepare(this.loaded.mesh.positions, {
+        targetSize: 100,
+        maxTriangles: 40000,
+        reorientUp: true,
+      });
+      this.norm = { mesh: { positions: prep.positions }, bounds: prep.bounds, matrix: prep.matrix, report: prep.report };
+    } catch (e) {
+      toast(`Mesh preparation failed: ${(e as Error).message}`, 'error');
+      return;
+    }
+
+    this.applyPlacement();
+    this.recompute(true);
   }
 
   private button(label: string, on: () => void): HTMLElement {
@@ -246,6 +265,7 @@ export class Workspace {
 
   /** Recompute the fitted placement and update the viewer transform + stats. */
   private applyPlacement() {
+    if (!this.norm) return;
     const fit = autoFit(this.norm.bounds, this.blank, this.rotation, this.margin);
     this.placement = { translation: [0, 0, 0], rotation: this.rotation, scale: fit.placement.scale * this.userScale };
     const pm = placementMatrix(this.placement, this.norm.bounds);
@@ -254,12 +274,13 @@ export class Workspace {
   }
 
   private placedPositions(): Float32Array {
-    const pm = placementMatrix(this.placement, this.norm.bounds);
-    return applyMatrix4(this.norm.mesh, pm).positions;
+    const norm = this.norm!;
+    const pm = placementMatrix(this.placement, norm.bounds);
+    return applyMatrix4(norm.mesh, pm).positions;
   }
 
   private renderStats(autoScale: number) {
-    if (!this.statsHost) return;
+    if (!this.statsHost || !this.norm) return;
     clear(this.statsHost);
     const rot = rotatedBoxSize(this.norm.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
     const src = boxSize(this.norm.bounds);
@@ -285,8 +306,10 @@ export class Workspace {
   }
 
   private recompute(immediate = false) {
+    if (!this.norm) return;
     window.clearTimeout(this.recomputeTimer);
     const go = async () => {
+      if (!this.norm) return;
       this.analyzing = true;
       this.renderStats(autoFit(this.norm.bounds, this.blank, this.rotation, this.margin).placement.scale);
       try {
@@ -302,7 +325,7 @@ export class Workspace {
         toast(`Analysis failed: ${(e as Error).message}`, 'error');
       } finally {
         this.analyzing = false;
-        this.renderStats(autoFit(this.norm.bounds, this.blank, this.rotation, this.margin).placement.scale);
+        if (this.norm) this.renderStats(autoFit(this.norm.bounds, this.blank, this.rotation, this.margin).placement.scale);
         this.pushStageToViewer();
         this.renderPanelArea();
       }
@@ -357,7 +380,7 @@ export class Workspace {
   }
 
   private openGuide() {
-    if (!this.analysis) return;
+    if (!this.analysis || !this.norm) return;
     const rot = rotatedBoxSize(this.norm.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
     const html = buildGuideHtml(
       {
