@@ -5,7 +5,7 @@
  */
 
 import { VoxelGrid, countSolid, voxelVolume } from './voxelize';
-import { erode, distanceToSolid } from './distance';
+import { erode, dilate, distanceToSolid } from './distance';
 import { project, coverage, outlinePolylines } from './projection';
 import { Mesh, triangleCount } from './mesh';
 import { blankVolume } from './blank';
@@ -73,8 +73,15 @@ function undercutFraction(g: VoxelGrid): number {
   return columns === 0 ? 0 : undercut / columns;
 }
 
-/** Connected components (6-neighbour) of the solid, sorted desc by voxel count. */
-function components(g: VoxelGrid): number[] {
+/**
+ * Connected components (6-neighbour), sorted desc by voxel count. Operates on a
+ * lightly *closed* copy of the solid (dilate then erode by ~1 voxel) so that a
+ * thin-but-continuous feature like a neck is not reported as a break.
+ */
+function components(gIn: VoxelGrid): number[] {
+  const step = (gIn.d[0] + gIn.d[1] + gIn.d[2]) / 3;
+  const closed = erode({ ...gIn, data: dilate(gIn, step * 1.6) }, step * 1.6);
+  const g: VoxelGrid = { ...gIn, data: closed };
   const { nx, ny, nz, data } = g;
   const label = new Int32Array(data.length).fill(-1);
   const sizes: number[] = [];

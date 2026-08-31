@@ -1,0 +1,33 @@
+MIT License
+
+Copyright (c) 2026 WhittleGuide contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Third-party content and code:
+
+* 3D models surfaced from the Smithsonian 3D API and Smithsonian Open Access are
+  released by the Smithsonian Institution under Creative Commons Zero (CC0). They
+  are not covered by this MIT license. Attribution metadata is retained in-app
+  and in exported guides as a courtesy. See https://www.si.edu/openaccess.
+* three.js is licensed MIT (https://github.com/mrdoob/three.js).
+* The Draco decoder shipped in `public/draco/` is Copyright The Draco Authors,
+  licensed under Apache-2.0.

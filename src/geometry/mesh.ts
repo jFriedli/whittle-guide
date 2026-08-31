@@ -266,9 +266,9 @@ export function makeCone(radius = 1, height = 2, seg = 24): Mesh {
  * Stand-in for a human-like carving subject in tests and offline demos.
  */
 export function makePawn(): Mesh {
-  const body = applyMatrix4(makeCylinder(0.5, 1.2, 20), translation(0, -0.3, 0));
-  const base = applyMatrix4(makeCylinder(0.7, 0.25, 20), translation(0, -1.0, 0));
-  const neck = applyMatrix4(makeCylinder(0.16, 0.35, 12), translation(0, 0.45, 0));
-  const head = applyMatrix4(makeSphere(0.34, 18), translation(0, 0.85, 0));
+  const body = applyMatrix4(makeCylinder(0.5, 1.3, 20), translation(0, -0.3, 0));
+  const base = applyMatrix4(makeCylinder(0.72, 0.28, 20), translation(0, -1.05, 0));
+  const neck = applyMatrix4(makeCylinder(0.3, 0.4, 14), translation(0, 0.5, 0));
+  const head = applyMatrix4(makeSphere(0.4, 18), translation(0, 0.95, 0));
   return mergeMeshes([base, body, neck, head]);
 }

@@ -20,7 +20,11 @@ export interface TemplateInput {
   subtitle?: string;
 }
 
-const MARGIN = 14; // mm around the face for labels
+const MARGIN = 16; // mm around the face for labels
+
+function clip(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
 
 function pathFrom(polylines: number[][][], flipY: number): string {
   return polylines
@@ -62,9 +66,9 @@ export function buildTemplateSvg(input: TemplateInput): string {
     <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#c07a3a" stroke-width="0.3" stroke-dasharray="2 1.5"/>
     <path d="${pathFrom(input.outline, flipY)}" fill="#e7d8bf" fill-opacity="0.55" stroke="#3c2f1e" stroke-width="0.6" stroke-linejoin="round"/>
     ${contourPaths}
-    <text x="0" y="-6" font-size="4" font-weight="600" fill="#3c2f1e">${escapeXml(input.title)}</text>
-    <text x="0" y="${h + 9}" font-size="3" fill="#5b4a33">${escapeXml(input.subtitle ?? `${w.toFixed(0)} × ${h.toFixed(0)} mm — print at 100% (Actual Size)`)}</text>
-    <text x="${w}" y="-6" font-size="3" fill="#5b4a33" text-anchor="end">${escapeXml(String(input.view).toUpperCase())}</text>
+    <text x="0" y="${h + 8}" font-size="3.4" font-weight="600" fill="#3c2f1e">${escapeXml(clip(input.title, 46))}</text>
+    <text x="0" y="${h + 12.5}" font-size="2.7" fill="#5b4a33">${escapeXml(input.subtitle ?? `${w.toFixed(0)} × ${h.toFixed(0)} mm — print at 100% (Actual Size)`)}</text>
+    <text x="${w}" y="-3.5" font-size="3.6" font-weight="700" fill="#3c2f1e" text-anchor="end">${escapeXml(String(input.view).toUpperCase())}</text>
   </g>
 </svg>`;
 }
