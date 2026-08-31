@@ -20,8 +20,10 @@ import {
   multiply,
   translation,
   scaling,
+  applyMatrix4,
 } from './mesh';
 import { simplifyMesh } from './simplify';
+import { computeOrientation, OrientationResult } from './orient';
 
 export type UpAxis = 'x' | 'y' | 'z';
 
@@ -34,6 +36,9 @@ export interface NormalizeReport {
   originalSize: Vec3;
   /** Uniform scale applied so the largest dimension is ~`targetSize` mm. */
   unitScale: number;
+  /** Whether auto-orientation rotated the model, and a short description. */
+  reoriented: boolean;
+  orientationNote: string;
 }
 
 export interface NormalizeResult {
@@ -188,8 +193,12 @@ export interface NormalizeOptions {
   targetSize?: number;
   /** Simplify to at most this many triangles for analysis. */
   maxTriangles?: number;
-  /** Re-orient so the guessed up axis becomes +Y. */
+  /** Re-orient so the guessed up axis becomes +Y (legacy bbox heuristic). */
   reorientUp?: boolean;
+  /** PCA-based auto orientation (stand the longest axis up, heavy end down). Default true. */
+  autoOrient?: boolean;
+  /** Aggressive auto-orient: stand up even mildly elongated shapes (busts). */
+  orientAggressive?: boolean;
 }
 
 export function normalizeMesh(input: Mesh, opts: NormalizeOptions = {}): NormalizeResult {
@@ -218,47 +227,43 @@ export function normalizeMesh(input: Mesh, opts: NormalizeOptions = {}): Normali
     }
   }
 
-  // Recentre to origin and scale so the largest dimension is `targetSize` mm.
-  const b0 = computeBounds(mesh);
-  const c0 = boxCenter(b0);
+  // Centre at origin, (optionally) auto-orient by PCA, then scale to targetSize.
+  const bPre = computeBounds(mesh);
+  const c0 = boxCenter(bPre);
+  const centred = applyMatrix4(mesh, translation(-c0[0], -c0[1], -c0[2]));
+
+  const autoOrient = opts.autoOrient ?? true;
+  let orient: OrientationResult = { rotation: identity(), changed: false, note: 'orientation unchanged' };
+  let oriented = centred;
+  if (autoOrient) {
+    orient = computeOrientation(centred, { aggressive: opts.orientAggressive });
+    if (orient.changed) oriented = applyMatrix4(centred, orient.rotation);
+  } else if (opts.reorientUp) {
+    const up = guessUpAxis(boxSize(bPre));
+    if (up !== 'y') {
+      orient = { rotation: reorientMatrix(up), changed: true, note: `re-oriented from ${up.toUpperCase()}-up` };
+      oriented = applyMatrix4(centred, orient.rotation);
+    }
+  }
+
+  const b0 = computeBounds(oriented);
+  const c1 = boxCenter(b0);
   const s0 = boxSize(b0);
   const maxDim = Math.max(s0[0], s0[1], s0[2]) || 1;
   const unitScale = targetSize / maxDim;
-
   const guessedUp = guessUpAxis(s0);
-  const p = mesh.positions;
-  const out = new Float32Array(p.length);
-  for (let i = 0; i < p.length; i += 3) {
-    let x = (p[i] - c0[0]) * unitScale;
-    let y = (p[i + 1] - c0[1]) * unitScale;
-    let z = (p[i + 2] - c0[2]) * unitScale;
-    if (opts.reorientUp && guessedUp !== 'y') {
-      if (guessedUp === 'z') {
-        // z-up -> y-up
-        const ny = z;
-        const nz = -y;
-        y = ny;
-        z = nz;
-      } else {
-        // x-up -> y-up
-        const ny = x;
-        const nx = -y;
-        y = ny;
-        x = nx;
-      }
-    }
-    out[i] = x;
-    out[i + 1] = y;
-    out[i + 2] = z;
-  }
 
-  const result: Mesh = { positions: out };
+  const finalXform = multiply(
+    scaling(unitScale, unitScale, unitScale),
+    translation(-c1[0], -c1[1], -c1[2]),
+  );
+  const result = applyMatrix4(oriented, finalXform);
   const bounds = computeBounds(result);
 
-  const reorient = opts.reorientUp && guessedUp !== 'y' ? reorientMatrix(guessedUp) : identity();
+  // raw → normalised = finalXform · orient.rotation · translate(-c0)
   const matrix = multiply(
-    reorient,
-    multiply(scaling(unitScale, unitScale, unitScale), translation(-c0[0], -c0[1], -c0[2])),
+    finalXform,
+    multiply(orient.rotation, translation(-c0[0], -c0[1], -c0[2])),
   );
 
   return {
@@ -273,6 +278,8 @@ export function normalizeMesh(input: Mesh, opts: NormalizeOptions = {}): Normali
       guessedUp,
       originalSize: rawSize,
       unitScale,
+      reoriented: orient.changed,
+      orientationNote: orient.note,
     },
   };
 }

@@ -51,6 +51,7 @@ export class Workspace {
   private analyzing = false;
   private recomputeTimer = 0;
 
+  private orientAggressive = false;
   private tab: PanelTab = 'silhouette';
   private stageIndex = 4;
   private contourInterval = 5;
@@ -98,6 +99,7 @@ export class Workspace {
         this.button('Roll ⭯ Z−', () => this.rotate(2, -90)),
       ]),
       el('div', { class: 'btnrow' }, [
+        this.button('Auto-orient', () => this.reprepare(!this.orientAggressive)),
         this.button('Centre & reset', () => { this.rotation = [0, 0, 0]; this.userScale = 1; this.applyPlacement(); this.recompute(); }),
         this.button('Reset camera', () => this.viewer.resetCamera()),
       ]),
@@ -139,7 +141,18 @@ export class Workspace {
     this.viewer.setBlank(this.blank);
     this.viewer.setMode(this.viewMode);
     this.viewer.resetCamera();
+    await this.prepareMesh();
+  }
 
+  /** Re-run mesh preparation (used by the "Auto-orient" button). */
+  private reprepare(aggressive: boolean) {
+    this.orientAggressive = aggressive;
+    this.rotation = [0, 0, 0];
+    this.userScale = 1;
+    void this.prepareMesh();
+  }
+
+  private async prepareMesh() {
     clear(this.panelHost);
     this.panelHost.append(
       el('div', { class: 'panel panel--loading' }, [
@@ -147,19 +160,18 @@ export class Workspace {
         ` Preparing ${this.loaded.triangleCount.toLocaleString()}-triangle mesh (clean · decimate · orient)…`,
       ]),
     );
-
     try {
       const prep: PreparedMesh = await this.client.prepare(this.loaded.mesh.positions, {
         targetSize: 100,
         maxTriangles: 40000,
-        reorientUp: true,
+        autoOrient: true,
+        orientAggressive: this.orientAggressive,
       });
       this.norm = { mesh: { positions: prep.positions }, bounds: prep.bounds, matrix: prep.matrix, report: prep.report };
     } catch (e) {
       toast(`Mesh preparation failed: ${(e as Error).message}`, 'error');
       return;
     }
-
     this.applyPlacement();
     this.recompute(true);
   }
@@ -288,8 +300,8 @@ export class Workspace {
       ['Blank', `${fmtMm(this.blank.width, this.units)} × ${fmtMm(this.blank.height, this.units)} × ${fmtMm(this.blank.depth, this.units)}`],
       ['Final model', `${rot.map((v) => fmtMm(v, this.units)).join(' × ')}`],
       ['Scale', `${(this.placement.scale).toFixed(3)}× (auto ${autoScale.toFixed(3)}×)`],
-      ['Source mesh', `${this.loaded.triangleCount.toLocaleString()} tris → ${this.norm.report.outputTriangles.toLocaleString()} for analysis`],
-      ['Up axis', this.norm.report.guessedUp.toUpperCase() + (this.norm.report.simplified ? ' · simplified' : '')],
+      ['Source mesh', `${this.loaded.triangleCount.toLocaleString()} tris → ${this.norm.report.outputTriangles.toLocaleString()} for analysis${this.norm.report.simplified ? ' (quadric)' : ''}`],
+      ['Orientation', this.norm.report.reoriented ? this.norm.report.orientationNote : 'as supplied'],
       ['Engine', this.analysis ? (this.analysis.engine === 'wasm' ? 'WASM kernel' : 'JavaScript') : '—'],
     ];
     void src;
