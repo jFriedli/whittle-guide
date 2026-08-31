@@ -41,13 +41,17 @@ Smithsonian; **uploaded files never leave your device**.
 | Upload `.glb` / `.gltf` (incl. Draco) / `.obj` / `.stl` | ✅ |
 | Interactive 3D workspace: orbit/pan/zoom, translucent blank, labelled axes | ✅ |
 | Editable blank dimensions (mm / cm), auto-fit with margin, orientation, scale | ✅ |
-| Visualisation modes: model, blank+model, current stage, material-to-remove, wireframe, section | ✅ |
+| Visualisation modes: model, blank+model, current stage, material-to-remove, **undercuts**, wireframe, section | ✅ |
 | 6 orthographic silhouette templates with real dimensions, centre lines, tick marks | ✅ |
 | Depth maps (front/back/left/right) with hover read-out and legend | ✅ |
 | Contour maps at 2 / 5 / 10 mm | ✅ |
 | 9 progressive carving stages with geometry-derived instructions | ✅ |
 | Stage timeline + material-removed visualisation | ✅ |
 | Carvability analysis + unsuitable-model warnings | ✅ |
+| **Undercut detection** — highlights surface a straight knife can't reach | ✅ |
+| **PCA auto-orientation** (+ "Auto-orient" button) so any pose comes in usable | ✅ |
+| **Quadric (QEM) mesh decimation** for arbitrary dense uploads | ✅ |
+| Drag-and-drop upload anywhere on the page | ✅ |
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
 | **Rust → WASM geometry kernel** (voxelisation + distance transform), ~10× faster, with JS fallback | ✅ |
@@ -72,11 +76,14 @@ src/
       smithsonian.ts       Smithsonian 3D API + curated catalogue
       europeana.ts         optional, config-gated
     catalogue.generated.json   committed CC0 catalogue (see scripts/build-catalogue.mjs)
-  viewer/         three.js scene, model loaders, voxel→mesh, demo models
+  viewer/         three.js scene, model loaders, Surface Nets isosurface, demo models
   geometry/       PURE, three.js-free, unit-tested pipeline
     mesh.ts normalize.ts blank.ts voxelize.ts distance.ts
     projection.ts contours.ts marchingSquares.ts
     carvingStages.ts carvability.ts roughCuts.ts analysis.ts
+    simplify.ts          quadric (QEM) edge-collapse decimation
+    orient.ts            PCA auto-orientation
+    undercuts.ts         6-axis unreachable-surface detection
     viewGeometry.ts      one source of truth: view → face-frame mapping
     silhouette.ts        high-res vector silhouette tracing (triangle raster)
     depthField.ts        high-res orthographic depth maps (triangle z-buffer)
@@ -100,12 +107,20 @@ The worker is a thin wrapper around `geometry/analysis.ts::analyse()`.
 
 ## 4. Supported model types
 
-`.glb`, `.gltf` (including Draco-compressed), `.obj`, `.stl`. Textures are not
-required for analysis. Broken or empty files produce a readable error.
+`.glb`, `.gltf` (including Draco-compressed), `.obj`, `.stl`, `.ply`. Load them
+from the Upload button or by **dropping a file anywhere on the page**. Textures
+aren't required for analysis. Broken files, empty files and PLY point clouds
+produce a readable error.
 
-For large museum scans the mesh is cleaned (degenerate triangles dropped) and
-**simplified by vertex clustering** to ≤ 40 000 triangles for interactive
-analysis; the original is still shown in the viewer.
+**Museum objects are only one source — any model works the same way.** On load,
+every mesh is cleaned (degenerate triangles dropped), **decimated with quadric
+edge-collapse** to ≤ 40 000 triangles for analysis (huge scans are clustered
+down first to keep it interactive), and **PCA-auto-oriented** so an arbitrary
+pose (Z-up export, tilted scan, sideways prop) comes in standing sensibly. All of
+this runs in the geometry worker, off the main thread; the original mesh is still
+shown in the viewer. The "Auto-orient" button re-runs orientation more
+aggressively (e.g. to stand up a portrait bust); the six rotate buttons are the
+final manual fallback.
 
 ## 5. Museum integration
 
@@ -147,6 +162,10 @@ The app is fully functional without Europeana.
 ## 6. Geometry pipeline
 
 ```
+raw mesh
+  └─ clean · quadric-decimate · PCA-orient · scale     (worker, once per model)
+        │
+        ▼
 placed mesh (blank space)
   ├─ triangle raster ──→ silhouettes   ~0.1 mm/px + Douglas–Peucker  (6 faces)
   │                  └─→ depth maps    ~300 px/face z-buffer, quantised 1 mm (4 faces)
@@ -155,6 +174,7 @@ placed mesh (blank space)
          ├─ carving stages       nested envelopes, invariant-checked (see §7)
          │      └─ 3-D preview    Surface Nets isosurface (smoothed)
          ├─ carvability report    undercuts, thin features, symmetry, recesses, …
+         ├─ undercut mask         surface unreachable from any of the 6 axes
          └─ experimental rough cuts   safe whole-slab straight cuts
 ```
 
@@ -207,10 +227,15 @@ Per-stage instructions are generated from *which* constraint was applied and the
   isosurface (Surface Nets + field blur + Laplacian) of that grid, so it reads as
   carved wood rather than voxels; the underlying stage data is still grid
   resolution.
-- Mesh simplification is **vertex clustering**, not quadric decimation — good
-  enough for silhouettes/depth/voxels, not for display-quality reduction.
-- "Up axis" detection is a heuristic; use the orientation buttons if it guesses
-  wrong.
+- Auto-orientation is PCA + heuristics: it stands up figures/busts/bottles and
+  squares up tilted or Z-up models, but it can't know that a reclining animal is
+  *meant* to be horizontal. Use "Auto-orient" for a stronger stand-up guess and
+  the six rotate buttons to override.
+- Quadric decimation on a 300 k-triangle scan takes a few seconds (it runs in the
+  worker with a progress state). It rejects collapses that flip a triangle but is
+  not guaranteed to preserve manifoldness on already-broken scans.
+- Undercut detection is the strict "straight tool from 6 axes" model — it does
+  not account for bent knives or reaching into an open pocket at an angle.
 - Rough-cut suggestions are conservative (whole-slab, axis-aligned only) and
   explicitly **experimental**.
 - Carvability scoring is a heuristic, not a simulation.
@@ -260,10 +285,16 @@ results:
 - safety-margin monotonicity;
 - disconnected-part detection;
 - vector silhouette extent / smoothness / resolution-independence;
+- quadric decimation: hits the target count, keeps a sphere round, preserves
+  volume, produces no degenerate triangles;
+- PCA auto-orientation: stands up a lying figure, leaves an upright one alone,
+  doesn't tip a flat/wide object onto its edge;
+- undercut detection: none on convex/box shapes, a real fraction inside an
+  enclosed cavity;
 - **WASM-vs-TS parity** (`tests/wasm-parity`): voxelisation bit-identical,
   distance transform within 0.05 mm, dilation masks within 0.1%.
 
-CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+53 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 
@@ -284,9 +315,9 @@ planning and the carvability scoring — all pure functions behind
 `geometry/analysis.ts`.
 
 ### Physical carving intelligence
-Grain direction, fragile-feature planning, clamping surfaces, knife/gouge/saw
-accessibility, undercut planning, minimum safe thickness, grain-aware order of
-operations.
+Undercut *detection* exists; still to do: grain direction, fragile-feature
+planning, clamping surfaces, knife/gouge/saw *accessibility planning* (which tool
+for which region), minimum safe thickness, grain-aware order of operations.
 
 ### AR mode
 The carving-stage representation (nested voxel envelopes + final mesh) is designed
