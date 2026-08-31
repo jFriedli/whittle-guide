@@ -56,10 +56,10 @@ export function renderLibrary(library: MuseumLibrary, cb: LibraryCallbacks): HTM
   const uploadZone = el('section', { class: 'uploadzone' }, [
     el('div', { class: 'uploadzone__inner' }, [
       el('strong', {}, ['Or use your own model']),
-      el('p', {}, ['.glb · .gltf · .obj · .stl — processed entirely on this device. Your file is never uploaded anywhere.']),
+      el('p', {}, ['.glb · .gltf · .obj · .stl · .ply — processed entirely on this device. Your file is never uploaded anywhere.']),
       (() => {
         const b = el('button', { class: 'btn' }, ['Choose a file…']);
-        const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl', style: 'display:none' }) as HTMLInputElement;
+        const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl,.ply', style: 'display:none' }) as HTMLInputElement;
         b.addEventListener('click', () => fi.click());
         fi.addEventListener('change', () => {
           if (fi.files?.[0]) cb.onUpload(fi.files[0]);

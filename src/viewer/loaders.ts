@@ -1,6 +1,7 @@
 /**
- * Model loading. Supports .glb / .gltf (incl. Draco-compressed), .obj and .stl,
- * from a URL (museum objects) or a local File (upload — never leaves the browser).
+ * Model loading. Supports .glb / .gltf (incl. Draco-compressed), .obj, .stl and
+ * .ply, from a URL (museum objects) or a local File (upload — never leaves the
+ * browser).
  *
  * Produces both a three.js object for the viewer and a plain triangle-soup
  * `Mesh` (world-space) for the geometry subsystem.
@@ -11,11 +12,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { Mesh } from '../geometry/mesh';
 
-export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'stl';
+export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'stl' | 'ply';
 
-export const SUPPORTED_EXTENSIONS = ['.glb', '.gltf', '.obj', '.stl'] as const;
+export const SUPPORTED_EXTENSIONS = ['.glb', '.gltf', '.obj', '.stl', '.ply'] as const;
 
 export interface LoadedModel {
   object: THREE.Object3D;
@@ -41,6 +43,7 @@ export function formatFromName(name: string): ModelFormat | null {
   if (lower.endsWith('.gltf')) return 'gltf';
   if (lower.endsWith('.obj')) return 'obj';
   if (lower.endsWith('.stl')) return 'stl';
+  if (lower.endsWith('.ply')) return 'ply';
   return null;
 }
 
@@ -99,6 +102,16 @@ async function parse(format: ModelFormat, data: ArrayBuffer, url?: string): Prom
     case 'stl': {
       const geom = new STLLoader().parse(data);
       geom.computeVertexNormals();
+      const material = new THREE.MeshStandardMaterial({ color: 0xb0895e, roughness: 0.85, metalness: 0 });
+      return new THREE.Mesh(geom, material);
+    }
+    case 'ply': {
+      const geom = new PLYLoader().parse(data);
+      if (!geom.getAttribute('position')) throw new Error('PLY file has no vertex data.');
+      if (!geom.getIndex()) {
+        throw new Error('This PLY has no faces — it looks like a point cloud. WhittleGuide needs a surface mesh (try meshing it first).');
+      }
+      if (!geom.getAttribute('normal')) geom.computeVertexNormals();
       const material = new THREE.MeshStandardMaterial({ color: 0xb0895e, roughness: 0.85, metalness: 0 });
       return new THREE.Mesh(geom, material);
     }

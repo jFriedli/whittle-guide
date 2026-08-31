@@ -259,6 +259,19 @@ h1, h2, h3 { line-height: 1.25; }
 .toast--in { opacity: 1; transform: translate(-50%, 0); }
 .toast--error { border-color: #6b3d34; }
 
+.dropzone {
+  position: fixed; inset: 0; z-index: 80; display: none;
+  background: rgba(20, 22, 26, 0.82); backdrop-filter: blur(3px);
+  align-items: center; justify-content: center; pointer-events: none;
+}
+.dropzone--on { display: flex; }
+.dropzone__inner {
+  border: 2px dashed var(--wood); border-radius: 16px; padding: 48px 64px;
+  color: var(--text); font-size: 22px; font-weight: 600; text-align: center;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.dropzone__inner span { font-size: 13px; font-weight: 400; color: var(--text-dim); }
+
 @media (max-width: 640px) {
   .topbar { flex-direction: column; align-items: flex-start; gap: 4px; }
   .nav { gap: 0; }

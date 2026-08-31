@@ -22,6 +22,34 @@ export class App {
     this.root.append(this.topbar(), this.main);
     this.show('home');
     window.addEventListener('keydown', (e) => this.onKey(e));
+    this.setupDragDrop();
+  }
+
+  private setupDragDrop() {
+    const overlay = el('div', { class: 'dropzone' }, [
+      el('div', { class: 'dropzone__inner' }, ['Drop a 3D model to load', el('span', {}, ['.glb · .gltf · .obj · .stl · .ply — stays on your device'])]),
+    ]);
+    this.root.append(overlay);
+    let depth = 0;
+    const show = () => overlay.classList.add('dropzone--on');
+    const hide = () => overlay.classList.remove('dropzone--on');
+    window.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      depth++;
+      show();
+    });
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) hide();
+    });
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      depth = 0;
+      hide();
+      const file = e.dataTransfer?.files?.[0];
+      if (file) this.openUpload(file);
+    });
   }
 
   private topbar(): HTMLElement {
@@ -71,7 +99,7 @@ export class App {
   }
 
   private pickFile() {
-    const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl', style: 'display:none' }) as HTMLInputElement;
+    const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl,.ply', style: 'display:none' }) as HTMLInputElement;
     fi.addEventListener('change', () => {
       if (fi.files?.[0]) this.openUpload(fi.files[0]);
     });
@@ -179,7 +207,7 @@ export class App {
       ]),
       el('h2', {}, ['What it does today']),
       el('ul', {}, [
-        el('li', {}, ['Browse real Smithsonian Open Access 3D scans, or load your own .glb / .gltf / .obj / .stl.']),
+        el('li', {}, ['Browse real Smithsonian Open Access 3D scans, or load your own .glb / .gltf / .obj / .stl / .ply.']),
         el('li', {}, ['Place and scale the model inside a wooden blank with real millimetre dimensions and auto-fit.']),
         el('li', {}, ['Generate 1:1 printable SVG templates for all six faces.']),
         el('li', {}, ['Compute orthographic depth maps and 2 / 5 / 10 mm contour maps.']),
