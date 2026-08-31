@@ -241,7 +241,8 @@ async function main() {
 
   objects.sort((a, b) => a.estimatedDifficulty - b.estimatedDifficulty || a.title.localeCompare(b.title));
   const payload = {
-    generatedAt: new Date().toISOString(),
+    // No timestamp on purpose: the CI refresh job should only commit when a
+    // model URL actually changes, not on every scheduled run.
     source: 'Smithsonian 3D API (https://3d-api.si.edu) + Smithsonian Open Access',
     licenceNote:
       'All objects are published on 3d.si.edu as Open Access / CC0. sourceUrl links the authoritative record; confirm reuse terms there.',
