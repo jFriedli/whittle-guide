@@ -52,8 +52,8 @@ function templateFigure(ctx: PanelContext, view: ViewName, withContours = false)
     heightMm: proj.heightMm,
     outline: proj.outline,
     contours,
-    title: `${ctx.title} — ${view.toUpperCase()}`,
-    subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm`,
+    title: '',
+    subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm${withContours ? ` · ${ctx.contourInterval} mm contours` : ''}`,
   });
   const fig = el('figure', { class: 'tplfig' }, [
     svgEl(svg),

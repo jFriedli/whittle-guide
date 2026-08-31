@@ -11,7 +11,9 @@ Think of it as an early **"slicer" for subtractive hand carving**: instead of
 generating layers to *add* material, it helps you progressively *remove* material
 from a blank until the object emerges.
 
-> **Live site:** https://jFriedli.github.io/whittle-guide/
+> **Live site:** https://jfriedli.com/whittle-guide/
+> (`https://jfriedli.github.io/whittle-guide/` redirects here — the account uses a
+> custom domain for its user Pages site.)
 
 ---
 

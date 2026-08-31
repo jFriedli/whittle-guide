@@ -372,13 +372,14 @@ export class Workspace {
       },
       this.analysis,
     );
-    const w = window.open('', '_blank');
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    const w = window.open(url, '_blank');
     if (!w) {
       toast('Pop-up blocked — allow pop-ups to open the printable guide.', 'error');
+      URL.revokeObjectURL(url);
       return;
     }
-    w.document.write(html);
-    w.document.close();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   private safeSnapshot(): string | undefined {
