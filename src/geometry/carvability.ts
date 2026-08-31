@@ -6,7 +6,7 @@
 
 import { VoxelGrid, countSolid, voxelVolume } from './voxelize';
 import { erode, dilate, distanceToSolid } from './distance';
-import { project, coverage, outlinePolylines } from './projection';
+import { silhouette } from './silhouette';
 import { Mesh, triangleCount } from './mesh';
 import { blankVolume } from './blank';
 
@@ -148,10 +148,12 @@ function symmetryScore(g: VoxelGrid): number {
   return either === 0 ? 1 : both / either;
 }
 
-function silhouetteComplexity(g: VoxelGrid): number {
+function silhouetteComplexity(g: VoxelGrid, mesh?: Mesh): number {
   // perimeter^2 / area of the front silhouette, normalised (circle ≈ 4π ≈ 12.57).
-  const p = project(g, 'front');
-  const lines = outlinePolylines(p);
+  const sil = mesh
+    ? silhouette(mesh, g.blank, 'front', { resolution: 300 })
+    : null;
+  const lines = sil ? sil.polylines : [];
   let perim = 0;
   for (const line of lines) {
     for (let i = 1; i < line.length; i++) {
@@ -160,8 +162,8 @@ function silhouetteComplexity(g: VoxelGrid): number {
       perim += Math.hypot(dx, dy);
     }
   }
-  const area = coverage(p) * p.widthMm * p.heightMm;
-  if (area <= 0) return 0;
+  const area = (sil ? sil.coverage : 0) * g.blank.width * g.blank.height;
+  if (area <= 0 || perim <= 0) return 1;
   return (perim * perim) / area / (4 * Math.PI);
 }
 
@@ -196,7 +198,7 @@ export function analyseCarvability(
   const bigComps = comps.length ? comps.filter((c) => c > comps[0] * 0.02).length : 0;
   const minFeat = minFeatureMm(finalGrid);
   const sym = symmetryScore(finalGrid);
-  const silh = silhouetteComplexity(finalGrid);
+  const silh = silhouetteComplexity(finalGrid, analysisMeshInfo?.mesh);
   const deep = deepRecessScore(finalGrid);
   const step = (finalGrid.d[0] + finalGrid.d[1] + finalGrid.d[2]) / 3;
 

@@ -15,7 +15,8 @@
 import { Mesh, triangleCount } from './mesh';
 import { Blank } from './blank';
 import { voxelize, VoxelGrid, solidVolume } from './voxelize';
-import { project, ALL_VIEWS, ViewName, silhouetteExtent, outlinePolylines, coverage } from './projection';
+import { project, ALL_VIEWS, ViewName } from './projection';
+import { silhouette } from './silhouette';
 import { depthMap, DepthMap, FACE_DEPTH_VIEWS } from './depthMap';
 import { contourMap, CONTOUR_INTERVALS } from './contours';
 import { buildCarvingStages, verifyStageInvariant, CarvingStage } from './carvingStages';
@@ -83,6 +84,8 @@ export interface AnalysisOptions {
   depthQuantiseMm?: number;
   contourIntervalMm?: number;
   voxelAxes?: 1 | 3;
+  /** Pixels across the longer face axis for silhouette tracing. Default 420. */
+  silhouetteResolution?: number;
 }
 
 export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}): AnalysisResult {
@@ -91,6 +94,10 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
 
   const projections: ProjectionResult[] = ALL_VIEWS.map((view) => {
     const p = project(grid, view);
+    // Outline comes from a high-res projected-triangle raster, independent of the
+    // voxel grid, so printed templates stay crisp. The voxel mask is retained for
+    // quick coverage/extent checks elsewhere.
+    const sil = silhouette(placed, blank, view, { resolution: opts.silhouetteResolution ?? 420 });
     return {
       view,
       widthMm: p.widthMm,
@@ -98,9 +105,9 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
       cols: p.cols,
       rows: p.rows,
       mask: p.mask,
-      outline: outlinePolylines(p),
-      extentMm: silhouetteExtent(p),
-      coverage: coverage(p),
+      outline: sil.polylines,
+      extentMm: sil.extentMm,
+      coverage: sil.coverage,
     };
   });
 
