@@ -1,0 +1,16 @@
+[package]
+name = "whittle-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "WhittleGuide geometry kernel (voxelisation + distance transform) compiled to wasm32."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

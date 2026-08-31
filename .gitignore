@@ -12,3 +12,6 @@ scratch
 
 scratch/
 shot-*.png
+
+# Rust build artifacts
+wasm/target/

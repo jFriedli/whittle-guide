@@ -22,6 +22,7 @@ import { contourMap, CONTOUR_INTERVALS } from './contours';
 import { buildCarvingStages, verifyStageInvariant, CarvingStage } from './carvingStages';
 import { analyseCarvability, CarvabilityReport } from './carvability';
 import { suggestRoughCuts, RoughCut } from './roughCuts';
+import { getKernel } from './wasm';
 
 export interface ProjectionResult {
   view: ViewName;
@@ -77,6 +78,8 @@ export interface AnalysisResult {
   stageInvariant: { ok: boolean; violations: string[] };
   carvability: CarvabilityReport;
   roughCuts: RoughCut[];
+  /** Which geometry backend ran this analysis. */
+  engine: 'wasm' | 'js';
 }
 
 export interface AnalysisOptions {
@@ -172,5 +175,6 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     stageInvariant,
     carvability,
     roughCuts,
+    engine: getKernel() ? 'wasm' : 'js',
   };
 }

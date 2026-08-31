@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "catalogue": "node scripts/build-catalogue.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "wasm:build": "bash wasm/build.sh"
   },
   "dependencies": {
     "three": "^0.185.1"

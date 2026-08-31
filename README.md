@@ -50,6 +50,9 @@ Smithsonian; **uploaded files never leave your device**.
 | Carvability analysis + unsuitable-model warnings | ✅ |
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
+| **Rust → WASM geometry kernel** (voxelisation + distance transform), ~10× faster, with JS fallback | ✅ |
+| Vector-quality silhouettes (high-res projected-triangle raster, independent of voxel grid) | ✅ |
+| Weekly CI refresh of the Smithsonian catalogue URLs | ✅ |
 | Europeana provider | ⚙️ scaffolded, opt-in via API key (see §5) |
 | PDF export | ➖ use the browser's "Save as PDF" from the guide (deliberately not a fake button) |
 | Knife/tool-path planning, grain awareness | ❌ future work (see §12) |
@@ -72,15 +75,24 @@ src/
     mesh.ts normalize.ts blank.ts voxelize.ts distance.ts
     projection.ts depthMap.ts contours.ts marchingSquares.ts
     carvingStages.ts carvability.ts roughCuts.ts analysis.ts
+    silhouette.ts        high-res vector silhouette tracing
+    wasm/                loader + typed wrapper for the Rust kernel
   workers/        analysis.worker.ts + main-thread client
   export/         SVG templates, printable guide
+
+wasm/             Rust crate — geometry kernel compiled to wasm32 (no wasm-bindgen)
+  src/lib.rs        voxelize + distance_transform, plain C ABI + bump allocator
+  build.sh          builds and copies kernel.wasm into src/geometry/wasm/
 ```
 
 The **geometry subsystem is deliberately decoupled from the UI and from three.js**.
 It operates on a plain triangle soup (`Float32Array`, 9 floats per triangle) and
-returns plain data, so it can be unit-tested in Node and later ported to
-Rust/WASM behind the same interface. The worker is a thin wrapper around
-`geometry/analysis.ts::analyse()`.
+returns plain data, so it is unit-tested in Node and the hot paths are also
+implemented in Rust (`wasm/`). The worker loads the WASM kernel once; if it
+loads, `voxelize()` and `distanceToSolid()` transparently use it (verified
+bit-identical / within 0.05 mm against the TS reference by `tests/wasm-parity`),
+otherwise the pure-TS implementations run. `analyse()` reports which engine ran.
+The worker is a thin wrapper around `geometry/analysis.ts::analyse()`.
 
 ## 4. Supported model types
 
@@ -178,10 +190,15 @@ Per-stage instructions are generated from *which* constraint was applied and the
 
 ## 8. Limitations
 
-- Analysis runs on a **voxel grid** (~60³–60×150×60). Fine surface detail below
-  the voxel size is lost; depth values are quantised (default 1 mm) on purpose.
-- Silhouette outlines are traced from the voxel mask, so they're faceted at grid
-  resolution, not vector-exact.
+- Depth maps, contour maps and the carving-stage volumes run on a **voxel grid**
+  (~60³–60×150×60). Fine detail below the voxel size is lost there; depth values
+  are quantised (default 1 mm) on purpose. (Template outlines are *not* limited by
+  this — see below.)
+- Template silhouettes are traced from a high-resolution raster of the projected
+  triangles (~0.1 mm/pixel) and Douglas–Peucker-simplified — crisp and
+  voxel-independent, though still a fine raster rather than an exact polygon
+  boolean of the triangles.
+- Contour lines are still voxel-grid resolution (they derive from the depth map).
 - Mesh simplification is **vertex clustering**, not quadric decimation — good
   enough for silhouettes/depth/voxels, not for display-quality reduction.
 - "Up axis" detection is a heuristic; use the orientation buttons if it guesses
@@ -205,10 +222,16 @@ npm run build        # typecheck + production build to dist/
 npm run preview      # serve the production build
 npm run catalogue    # regenerate the Smithsonian CC0 catalogue
 npm run catalogue -- --enrich   # + verify CC0 via Open Access API (needs SI_API_KEY)
+npm run wasm:build   # rebuild the Rust geometry kernel (needs the Rust toolchain)
 ```
 
-Node 20+. The Draco decoder lives in `public/draco/` and is served as a static
-asset; `DRACOLoader` is pointed at `${BASE_URL}draco/`.
+Node 20+. `three`'s `DRACOLoader` self-bundles its decoder via Vite, so
+Draco-compressed museum GLBs work with no extra setup.
+
+**Rebuilding the WASM kernel** needs Rust + `rustup target add
+wasm32-unknown-unknown`. The built `src/geometry/wasm/kernel.wasm` (~13 kB) is
+committed, so normal `npm install && npm run build` does **not** need Rust and CI
+never compiles it.
 
 ## 10. Testing
 
@@ -226,7 +249,10 @@ results:
 - projection extents, depth values, contour nesting;
 - **`blank ⊇ stage₁ ⊇ … ⊇ final` for cube / sphere / cone / pawn**;
 - safety-margin monotonicity;
-- disconnected-part detection.
+- disconnected-part detection;
+- vector silhouette extent / smoothness / resolution-independence;
+- **WASM-vs-TS parity** (`tests/wasm-parity`): voxelisation bit-identical,
+  distance transform within 0.05 mm, dilation masks within 0.1%.
 
 CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
@@ -240,10 +266,13 @@ GitHub Actions** (the workflow also self-configures via `actions/configure-pages
 
 ## 12. Future roadmap
 
-### Geometry engine → Rust / WASM
-Voxel ops, signed distance fields, contour extraction, mesh intersection, cut
-planning and the expensive scoring are all pure functions behind
-`geometry/analysis.ts` — prime candidates for a WASM core with the same interface.
+### Geometry engine → Rust / WASM  *(started)*
+Solid voxelisation and the 3-D distance transform — the two hottest operations —
+are already implemented in Rust and compiled to `wasm32-unknown-unknown` with a
+plain C ABI (no wasm-bindgen), giving ~10× on the full analysis. Still to move
+across: contour extraction, mesh intersection, silhouette rasterisation, cut
+planning and the carvability scoring — all pure functions behind
+`geometry/analysis.ts`.
 
 ### Physical carving intelligence
 Grain direction, fragile-feature planning, clamping surfaces, knife/gouge/saw

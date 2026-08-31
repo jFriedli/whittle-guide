@@ -14,6 +14,7 @@
 
 import { Mesh, Vec3 } from './mesh';
 import { Blank } from './blank';
+import { getKernel } from './wasm';
 
 export interface VoxelGrid {
   nx: number;
@@ -148,9 +149,19 @@ export function voxelize(mesh: Mesh, blank: Blank, opts: VoxelizeOptions = {}): 
   const approxCells = opts.approxCells ?? 64;
   const axes = opts.axes ?? 3;
   const { nx, ny, nz, d, origin } = gridForBlank(blank, approxCells);
+
+  const kernel = getKernel();
+  if (kernel) {
+    try {
+      const data = kernel.voxelize(mesh.positions, { nx, ny, nz }, d, origin, axes);
+      return { nx, ny, nz, d, origin, blank, data };
+    } catch {
+      /* fall through to the JS path */
+    }
+  }
+
   const n: [number, number, number] = [nx, ny, nz];
   const votes = new Uint8Array(nx * ny * nz);
-
   const axisList: (0 | 1 | 2)[] = axes === 1 ? [2] : [0, 1, 2];
   for (const ax of axisList) {
     const partial = new Uint8Array(nx * ny * nz);

@@ -267,6 +267,7 @@ export class Workspace {
       ['Scale', `${(this.placement.scale).toFixed(3)}× (auto ${autoScale.toFixed(3)}×)`],
       ['Source mesh', `${this.loaded.triangleCount.toLocaleString()} tris → ${this.norm.report.outputTriangles.toLocaleString()} for analysis`],
       ['Up axis', this.norm.report.guessedUp.toUpperCase() + (this.norm.report.simplified ? ' · simplified' : '')],
+      ['Engine', this.analysis ? (this.analysis.engine === 'wasm' ? 'WASM kernel' : 'JavaScript') : '—'],
     ];
     void src;
     const status = this.analyzing

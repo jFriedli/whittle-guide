@@ -5,6 +5,7 @@
  */
 
 import { VoxelGrid } from './voxelize';
+import { getKernel } from './wasm';
 
 const A = 1;
 const B = Math.SQRT2;
@@ -15,6 +16,15 @@ export function distanceToSolid(g: VoxelGrid): Float32Array {
   const { nx, ny, nz, data, d } = g;
   const scale = (d[0] + d[1] + d[2]) / 3;
   const N = nx * ny * nz;
+
+  const kernel = getKernel();
+  if (kernel) {
+    try {
+      return kernel.distanceTransform(data, { nx, ny, nz }, scale);
+    } catch {
+      /* fall through */
+    }
+  }
   const dist = new Float32Array(N);
   const BIG = 1e9;
   for (let i = 0; i < N; i++) dist[i] = data[i] ? 0 : BIG;
