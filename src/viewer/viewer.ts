@@ -7,7 +7,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Blank } from '../geometry/blank';
 import { Mat4 } from '../geometry/mesh';
-import { buildVoxelGeometry, VoxelDims } from './voxelMesh';
+import { VoxelDims } from './voxelMesh';
+import { buildSurfaceNetsGeometry } from './surfaceNets';
 
 export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section';
 
@@ -204,16 +205,19 @@ export class Viewer {
       return;
     }
     this.stageMesh = new THREE.Mesh(
-      buildVoxelGeometry(grid.data, dims),
-      new THREE.MeshStandardMaterial({ color: WOOD, roughness: 0.95, flatShading: true }),
+      buildSurfaceNetsGeometry(grid.data, dims, { blurPasses: 1, smoothIterations: 2 }),
+      new THREE.MeshStandardMaterial({
+        color: WOOD, roughness: 0.85, flatShading: false,
+        emissive: 0x2a1c0d, emissiveIntensity: 0.4,
+      }),
     );
     this.scene.add(this.stageMesh);
     if (grid.removed) {
       this.removeMesh = new THREE.Mesh(
-        buildVoxelGeometry(grid.removed, dims),
+        buildSurfaceNetsGeometry(grid.removed, dims, { blurPasses: 0, smoothIterations: 1 }),
         new THREE.MeshStandardMaterial({
-          color: 0xd6584a, transparent: true, opacity: 0.55, roughness: 0.8,
-          side: THREE.DoubleSide, flatShading: true,
+          color: 0xd6584a, transparent: true, opacity: 0.3, roughness: 0.9,
+          side: THREE.FrontSide, depthWrite: false, flatShading: false,
         }),
       );
       this.scene.add(this.removeMesh);

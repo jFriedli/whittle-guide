@@ -28,7 +28,9 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: 'guide', label: 'Guide / Print' },
 ];
 
-const RESOLUTION = 60;
+// Voxel cells along the longest blank axis. The WASM kernel makes ~84 as cheap
+// as ~50 was in pure JS; falls back gracefully if the kernel doesn't load.
+const RESOLUTION = 84;
 
 export class Workspace {
   readonly root: HTMLElement;
