@@ -266,9 +266,14 @@ three.js (MIT). Draco decoder © The Draco Authors (Apache-2.0).
 
 ## 14. Screenshots
 
-See `docs/` (home / workspace / guide). The workspace puts a translucent wooden
-blank around the model with labelled axes and centre lines; the bottom tabs are
-Silhouette · Depth · Contours · Roughing · Guide/Print.
+| Museum library | Workspace | Carving analysis |
+| --- | --- | --- |
+| ![home](docs/home.png) | ![workspace](docs/workspace.png) | ![guide](docs/guide.png) |
+
+The workspace puts a translucent wooden blank around the model with labelled axes
+and centre lines; the bottom tabs are Silhouette · Depth · Contours · Roughing ·
+Guide/Print. (Screenshots captured on the deployed site; museum thumbnails are
+blank here only because the capture environment couldn't reach `si.edu`.)
 
 ---
 
