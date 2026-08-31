@@ -22,6 +22,7 @@ import { contourMap, CONTOUR_INTERVALS } from './contours';
 import { buildCarvingStages, verifyStageInvariant, CarvingStage } from './carvingStages';
 import { analyseCarvability, CarvabilityReport } from './carvability';
 import { suggestRoughCuts, RoughCut } from './roughCuts';
+import { undercutMask } from './undercuts';
 import { getKernel } from './wasm';
 
 export interface ProjectionResult {
@@ -78,6 +79,8 @@ export interface AnalysisResult {
   stageInvariant: { ok: boolean; violations: string[] };
   carvability: CarvabilityReport;
   roughCuts: RoughCut[];
+  /** Surface voxels a straight knife can't reach from any axis (grid-sized mask). */
+  undercuts: { mask: Uint8Array; fraction: number };
   /** Which geometry backend ran this analysis. */
   engine: 'wasm' | 'js';
 }
@@ -161,7 +164,8 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
   const stages: CarvingStage[] = buildCarvingStages(grid);
   const stageInvariant = verifyStageInvariant(stages);
 
-  const carvability = analyseCarvability(grid, { mesh: placed });
+  const uc = undercutMask(grid);
+  const carvability = analyseCarvability(grid, { mesh: placed, undercutFraction: uc.fraction });
   const roughCuts = suggestRoughCuts(grid, Math.max(2, carvability.metrics.minFeatureMm));
 
   const blankVolumeCm3 = (blank.width * blank.height * blank.depth) / 1000;
@@ -189,6 +193,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     stageInvariant,
     carvability,
     roughCuts,
+    undercuts: { mask: uc.mask, fraction: uc.fraction },
     engine: getKernel() ? 'wasm' : 'js',
   };
 }

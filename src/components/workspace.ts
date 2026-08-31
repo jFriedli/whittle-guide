@@ -233,7 +233,7 @@ export class Workspace {
   private modeRow(): HTMLElement {
     const modes: [ViewMode, string][] = [
       ['model', 'Model'], ['blankModel', 'Blank + model'], ['stage', 'Current stage'],
-      ['remove', 'Material to remove'], ['wireframe', 'Wireframe'], ['section', 'Section'],
+      ['remove', 'Material to remove'], ['undercuts', 'Undercuts'], ['wireframe', 'Wireframe'], ['section', 'Section'],
     ];
     const wrap = el('div', { class: 'modewrap' });
     for (const [m, label] of modes) {
@@ -355,6 +355,7 @@ export class Workspace {
     const cur = this.analysis.stages[this.stageIndex];
     const prev = this.stageIndex > 0 ? this.analysis.stages[this.stageIndex - 1].data : null;
     this.viewer.setStage({ data: cur.data, removed: stageRemovedMask(prev, cur.data) }, dims);
+    this.viewer.setUndercuts(this.analysis.undercuts.mask, dims);
   }
 
   private syncViewerToTab() {

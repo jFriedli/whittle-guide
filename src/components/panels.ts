@@ -219,7 +219,7 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
         el('div', { class: 'analysis__grid' }, [
           fact('Difficulty', `${cav.stars}`),
           fact('Suggested skill', cav.skillLevel),
-          fact('Undercuts', cav.metrics.undercuts),
+          fact('Undercuts', `${cav.metrics.undercuts} (${Math.round(a.undercuts.fraction * 100)}% of surface — see the Undercuts view)`),
           fact('Thin features', `${cav.metrics.thinFeatures} (min ≈ ${cav.metrics.minFeatureMm} mm)`),
           fact('Silhouette complexity', cav.metrics.silhouetteComplexity),
           fact('Deep recesses', cav.metrics.deepRecesses),

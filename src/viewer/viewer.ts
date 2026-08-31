@@ -10,7 +10,7 @@ import { Mat4 } from '../geometry/mesh';
 import { VoxelDims } from './voxelMesh';
 import { buildSurfaceNetsGeometry } from './surfaceNets';
 
-export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section';
+export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section' | 'undercuts';
 
 export interface StageGrid {
   data: Uint8Array;
@@ -33,6 +33,7 @@ export class Viewer {
   private centerLines: THREE.LineSegments;
   private stageMesh: THREE.Mesh | null = null;
   private removeMesh: THREE.Mesh | null = null;
+  private undercutMesh: THREE.Mesh | null = null;
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
 
   private blank: Blank = { width: 40, height: 100, depth: 40 };
@@ -164,7 +165,7 @@ export class Viewer {
 
   private applyMode() {
     const m = this.mode;
-    const showModel = m === 'model' || m === 'blankModel' || m === 'wireframe' || m === 'section' || m === 'remove';
+    const showModel = m === 'model' || m === 'blankModel' || m === 'wireframe' || m === 'section' || m === 'remove' || m === 'undercuts';
     const showBlank = m === 'blankModel' || m === 'section';
     if (this.modelObject) {
       this.modelObject.visible = showModel;
@@ -176,8 +177,8 @@ export class Viewer {
         for (const x of list) {
           x.wireframe = m === 'wireframe';
           x.clippingPlanes = m === 'section' ? [this.clipPlane] : [];
-          x.transparent = m === 'remove';
-          x.opacity = m === 'remove' ? 0.35 : 1;
+          x.transparent = m === 'remove' || m === 'undercuts';
+          x.opacity = m === 'remove' ? 0.35 : m === 'undercuts' ? 0.55 : 1;
           x.needsUpdate = true;
         }
       });
@@ -187,6 +188,25 @@ export class Viewer {
     this.blankEdges.visible = true;
     if (this.stageMesh) this.stageMesh.visible = m === 'stage';
     if (this.removeMesh) this.removeMesh.visible = m === 'remove' || m === 'stage';
+    if (this.undercutMesh) this.undercutMesh.visible = m === 'undercuts';
+  }
+
+  setUndercuts(mask: Uint8Array | null, dims: VoxelDims) {
+    if (this.undercutMesh) {
+      this.scene.remove(this.undercutMesh);
+      this.undercutMesh.geometry.dispose();
+      this.undercutMesh = null;
+    }
+    let any = false;
+    if (mask) for (let i = 0; i < mask.length; i++) if (mask[i]) { any = true; break; }
+    if (any && mask) {
+      this.undercutMesh = new THREE.Mesh(
+        buildSurfaceNetsGeometry(mask, dims, { blurPasses: 0, smoothIterations: 1 }),
+        new THREE.MeshStandardMaterial({ color: 0xff3b30, emissive: 0x5c0f0a, emissiveIntensity: 0.6, roughness: 0.6, flatShading: false }),
+      );
+      this.scene.add(this.undercutMesh);
+    }
+    this.applyMode();
   }
 
   setStage(grid: StageGrid | null, dims: VoxelDims) {

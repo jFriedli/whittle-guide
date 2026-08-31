@@ -59,6 +59,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     for (const p of result.projections) transfer.push(p.mask.buffer);
     for (const d of result.depthMaps) transfer.push(d.depth.buffer);
     for (const s of result.stages) transfer.push(s.data.buffer);
+    transfer.push(result.undercuts.mask.buffer);
     post({ id: req.id, ok: true, kind: 'analyse', result }, transfer);
   } catch (e) {
     post({ id: req.id, ok: false, error: (e as Error).message + '\n' + ((e as Error).stack ?? '') });

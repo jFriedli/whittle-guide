@@ -187,13 +187,13 @@ function deepRecessScore(g: VoxelGrid): number {
 
 export function analyseCarvability(
   finalGrid: VoxelGrid,
-  analysisMeshInfo?: { mesh: Mesh },
+  analysisMeshInfo?: { mesh: Mesh; undercutFraction?: number },
 ): CarvabilityReport {
   const solidVol = countSolid(finalGrid) * voxelVolume(finalGrid);
   const blankVol = blankVolume(finalGrid.blank);
   const excess = 1 - solidVol / Math.max(1, blankVol);
 
-  const undercuts = undercutFraction(finalGrid);
+  const undercuts = analysisMeshInfo?.undercutFraction ?? undercutFraction(finalGrid);
   const comps = components(finalGrid);
   const bigComps = comps.length ? comps.filter((c) => c > comps[0] * 0.02).length : 0;
   const minFeat = minFeatureMm(finalGrid);
@@ -211,7 +211,7 @@ export function analyseCarvability(
   };
 
   const metrics = {
-    undercuts: rate(undercuts, [0.02, 0.08, 0.18, 0.35]),
+    undercuts: rate(undercuts, [0.05, 0.15, 0.3, 0.5]),
     thinFeatures: rateThin(minFeat),
     silhouetteComplexity: rate(silh, [1.3, 1.8, 2.6, 3.6]),
     deepRecesses: rate(deep, [0.02, 0.06, 0.14, 0.28]),
