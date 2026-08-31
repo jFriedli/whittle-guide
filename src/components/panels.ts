@@ -111,7 +111,7 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
     ]));
     const grid = el('div', { class: 'depthgrid' });
     for (const d of a.depthMaps) {
-      const url = depthToDataUrl(d, 5);
+      const url = depthToDataUrl(d, 2);
       const img = el('img', { src: url, alt: `${d.view} depth map`, class: 'depthimg' }) as HTMLImageElement;
       const readout = el('span', { class: 'depthreadout' }, ['hover the map']);
       img.addEventListener('mousemove', (ev) => {

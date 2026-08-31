@@ -14,7 +14,7 @@ import { normalizeMesh } from '../src/geometry/normalize';
 import { autoFit, defaultBlank, placementMatrix, fitsInside, blankBox } from '../src/geometry/blank';
 import { voxelize, solidVolume, countSolid } from '../src/geometry/voxelize';
 import { project, silhouetteExtent } from '../src/geometry/projection';
-import { depthMap, sampleDepthAt } from '../src/geometry/depthMap';
+import { depthField, sampleDepthFieldAt } from '../src/geometry/depthField';
 import { contourMap } from '../src/geometry/contours';
 
 describe('mesh generators + bounds', () => {
@@ -127,33 +127,38 @@ describe('projection extents', () => {
   });
 });
 
-describe('depth maps', () => {
-  it('depth to a centred sphere front face', () => {
+describe('depth field', () => {
+  it('depth to a centred sphere front face ≈ 5 mm', () => {
     const blank = { width: 40, height: 40, depth: 40 };
-    const g = voxelize(makeSphere(15, 48), blank, { approxCells: 48 });
-    const dm = depthMap(g, 'front', { quantiseMm: 1 });
-    // at the centre of the face, first hit is at depth ~ (20 - 15) = 5mm
-    const d = sampleDepthAt(dm, 20, 20);
+    const dm = depthField(makeSphere(15, 48), blank, 'front', { quantiseMm: 1, resolution: 200 });
+    const d = sampleDepthFieldAt(dm, 20, 20);
     expect(d).toBeGreaterThan(2);
-    expect(d).toBeLessThan(9);
+    expect(d).toBeLessThan(8);
     expect(dm.maxDepthMm).toBeGreaterThan(0);
   });
-  it('no hit outside silhouette returns -1', () => {
+  it('no surface outside the silhouette returns -1', () => {
     const blank = { width: 60, height: 60, depth: 60 };
-    const g = voxelize(makeSphere(10, 32), blank, { approxCells: 40 });
-    const dm = depthMap(g, 'front');
-    expect(sampleDepthAt(dm, 2, 2)).toBe(-1);
+    const dm = depthField(makeSphere(10, 32), blank, 'front', { resolution: 200 });
+    expect(sampleDepthFieldAt(dm, 2, 2)).toBe(-1);
+  });
+  it('front and back measure from opposite faces', () => {
+    // A box pushed towards +Z: shallow from the front, deep from the back.
+    const blank = { width: 40, height: 40, depth: 40 };
+    const mesh = applyMatrix4(makeBox(20, 20, 10), translation(0, 0, 12));
+    const front = depthField(mesh, blank, 'front', { resolution: 160 });
+    const back = depthField(mesh, blank, 'back', { resolution: 160 });
+    expect(sampleDepthFieldAt(front, 20, 20)).toBeLessThan(5);
+    expect(sampleDepthFieldAt(back, 20, 20)).toBeGreaterThan(20);
   });
 });
 
 describe('contours', () => {
   it('generates nested contour levels for a cone', () => {
     const blank = { width: 50, height: 50, depth: 50 };
-    const g = voxelize(applyMatrix4(makeCone(18, 40, 48), translation(0, 0, 0)), blank, { approxCells: 50 });
-    const dm = depthMap(g, 'front', { quantiseMm: 1 });
+    const mesh = applyMatrix4(makeCone(18, 40, 48), translation(0, 0, 0));
+    const dm = depthField(mesh, blank, 'front', { quantiseMm: 1, resolution: 200 });
     const cm = contourMap(dm, 5);
     expect(cm.levels.length).toBeGreaterThanOrEqual(2);
-    // deeper levels enclose less area (fewer/shorter polylines total length)
     const len = (lvl: { polylines: number[][][] }) =>
       lvl.polylines.reduce((s, pl) => s + pl.length, 0);
     expect(len(cm.levels[0])).toBeGreaterThanOrEqual(len(cm.levels[cm.levels.length - 1]));

@@ -17,7 +17,7 @@ import { Blank } from './blank';
 import { voxelize, VoxelGrid, solidVolume } from './voxelize';
 import { project, ALL_VIEWS, ViewName } from './projection';
 import { silhouette } from './silhouette';
-import { depthMap, DepthMap, FACE_DEPTH_VIEWS } from './depthMap';
+import { depthField, DepthField, FACE_DEPTH_VIEWS } from './depthField';
 import { contourMap, CONTOUR_INTERVALS } from './contours';
 import { buildCarvingStages, verifyStageInvariant, CarvingStage } from './carvingStages';
 import { analyseCarvability, CarvabilityReport } from './carvability';
@@ -89,6 +89,8 @@ export interface AnalysisOptions {
   voxelAxes?: 1 | 3;
   /** Pixels across the longer face axis for silhouette tracing. Default 420. */
   silhouetteResolution?: number;
+  /** Pixels across the longer face axis for depth maps / contours. Default 300. */
+  depthResolution?: number;
 }
 
 export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}): AnalysisResult {
@@ -114,8 +116,20 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     };
   });
 
+  const depthQuantiseMm = opts.depthQuantiseMm ?? 1;
+  const depthByView = new Map<ViewName, DepthField>();
+  for (const view of FACE_DEPTH_VIEWS) {
+    depthByView.set(
+      view,
+      depthField(placed, blank, view, {
+        resolution: opts.depthResolution ?? 300,
+        quantiseMm: depthQuantiseMm,
+      }),
+    );
+  }
+
   const depthMaps = FACE_DEPTH_VIEWS.map((view) => {
-    const dm: DepthMap = depthMap(grid, view, { quantiseMm: opts.depthQuantiseMm ?? 1 });
+    const dm = depthByView.get(view)!;
     return {
       view,
       widthMm: dm.widthMm,
@@ -131,7 +145,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
   const intervals = opts.contourIntervalMm ? [opts.contourIntervalMm] : CONTOUR_INTERVALS;
   const contours: ContourResult[] = [];
   for (const view of FACE_DEPTH_VIEWS) {
-    const dm = depthMap(grid, view, { quantiseMm: opts.depthQuantiseMm ?? 1 });
+    const dm = depthByView.get(view)!;
     for (const interval of intervals) {
       const cm = contourMap(dm, interval);
       contours.push({

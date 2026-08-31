@@ -62,7 +62,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
   const depthSections = analysis.depthMaps
     .filter((d) => d.view === 'front' || d.view === 'left')
     .map((d) => {
-      const url = depthToDataUrl(d, 6);
+      const url = depthToDataUrl(d, 2);
       return `<div class="depthfig">
         <img src="${url}" alt="${d.view} depth map"/>
         <p>${d.view.toUpperCase()} — max depth ${d.maxDepthMm.toFixed(0)} mm, values quantised to ${d.stepMm} mm.</p>

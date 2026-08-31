@@ -14,6 +14,7 @@
 import { Mesh } from './mesh';
 import { Blank } from './blank';
 import { ViewName } from './projection';
+import { viewFrame } from './viewGeometry';
 import { Grid2D, isoSegments, stitch } from './marchingSquares';
 
 export interface SilhouetteResult {
@@ -28,21 +29,6 @@ export interface SilhouetteResult {
   extentMm: [number, number, number, number];
 }
 
-type Proj = { px: (x: number, y: number, z: number) => number; py: (x: number, y: number, z: number) => number; w: number; h: number };
-
-function projectionFor(view: ViewName, b: Blank): Proj {
-  const W = b.width, H = b.height, D = b.depth;
-  switch (view) {
-    case 'front': return { px: (x) => x + W / 2, py: (_x, y) => y + H / 2, w: W, h: H };
-    case 'back': return { px: (x) => W / 2 - x, py: (_x, y) => y + H / 2, w: W, h: H };
-    case 'left': return { px: (_x, _y, z) => z + D / 2, py: (_x, y) => y + H / 2, w: D, h: H };
-    case 'right': return { px: (_x, _y, z) => D / 2 - z, py: (_x, y) => y + H / 2, w: D, h: H };
-    case 'top': return { px: (x) => x + W / 2, py: (_x, _y, z) => D / 2 - z, w: W, h: D };
-    case 'bottom': return { px: (x) => x + W / 2, py: (_x, _y, z) => z + D / 2, w: W, h: D };
-    default: throw new Error(`unknown view: ${view as string}`);
-  }
-}
-
 export interface SilhouetteOptions {
   /** Target pixels across the longer face axis. Default 420, capped at 900. */
   resolution?: number;
@@ -51,25 +37,25 @@ export interface SilhouetteOptions {
 }
 
 export function silhouette(mesh: Mesh, blank: Blank, view: ViewName, opts: SilhouetteOptions = {}): SilhouetteResult {
-  const proj = projectionFor(view, blank);
+  const frame = viewFrame(view, blank);
   const res = Math.min(900, Math.max(64, Math.round(opts.resolution ?? 420)));
-  const long = Math.max(proj.w, proj.h);
+  const long = Math.max(frame.widthMm, frame.heightMm);
   const px = long / res; // mm per pixel
-  const cols = Math.max(2, Math.round(proj.w / px));
-  const rows = Math.max(2, Math.round(proj.h / px));
-  const dx = proj.w / cols;
-  const dy = proj.h / rows;
+  const cols = Math.max(2, Math.round(frame.widthMm / px));
+  const rows = Math.max(2, Math.round(frame.heightMm / px));
+  const dx = frame.widthMm / cols;
+  const dy = frame.heightMm / rows;
 
   const mask = new Uint8Array(cols * rows);
   const p = mesh.positions;
 
   for (let t = 0; t < p.length; t += 9) {
-    const ax = proj.px(p[t], p[t + 1], p[t + 2]) / dx;
-    const ay = proj.py(p[t], p[t + 1], p[t + 2]) / dy;
-    const bx = proj.px(p[t + 3], p[t + 4], p[t + 5]) / dx;
-    const by = proj.py(p[t + 3], p[t + 4], p[t + 5]) / dy;
-    const cx = proj.px(p[t + 6], p[t + 7], p[t + 8]) / dx;
-    const cy = proj.py(p[t + 6], p[t + 7], p[t + 8]) / dy;
+    const ax = frame.toU([p[t], p[t + 1], p[t + 2]]) / dx;
+    const ay = frame.toV([p[t], p[t + 1], p[t + 2]]) / dy;
+    const bx = frame.toU([p[t + 3], p[t + 4], p[t + 5]]) / dx;
+    const by = frame.toV([p[t + 3], p[t + 4], p[t + 5]]) / dy;
+    const cx = frame.toU([p[t + 6], p[t + 7], p[t + 8]]) / dx;
+    const cy = frame.toV([p[t + 6], p[t + 7], p[t + 8]]) / dy;
 
     let minX = Math.floor(Math.min(ax, bx, cx));
     let maxX = Math.ceil(Math.max(ax, bx, cx));
@@ -134,8 +120,8 @@ export function silhouette(mesh: Mesh, blank: Blank, view: ViewName, opts: Silho
 
   return {
     view,
-    widthMm: proj.w,
-    heightMm: proj.h,
+    widthMm: frame.widthMm,
+    heightMm: frame.heightMm,
     polylines,
     coverage: covered / (cols * rows),
     extentMm,
