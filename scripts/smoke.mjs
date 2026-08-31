@@ -1,3 +1,14 @@
+/**
+ * Headless-browser smoke test of the built app.
+ *
+ *   npm run build && npm run preview      # in one terminal
+ *   npm run smoke                         # in another
+ *   BASE_URL=https://<user>.github.io/whittle-guide/ npm run smoke   # against prod
+ *
+ * Loads a built-in demo model (no network) and asserts the whole pipeline runs:
+ * library renders, workspace mounts, 6 templates, 4 depth maps, 9 stages, guide.
+ * Needs a Chromium at /usr/bin/chromium and playwright-core.
+ */
 import { chromium } from 'playwright-core';
 
 const base = process.env.BASE_URL || 'http://localhost:4173/';

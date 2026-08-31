@@ -28,9 +28,10 @@ export interface LoadedModel {
 
 function makeGLTFLoader(): GLTFLoader {
   const loader = new GLTFLoader();
-  const draco = new DRACOLoader();
-  draco.setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
-  loader.setDRACOLoader(draco);
+  // three's DRACOLoader resolves its decoder via `new URL(..., import.meta.url)`,
+  // so Vite bundles the decoder as an asset automatically — no decoder path or
+  // public/ copy needed. Draco-compressed museum GLBs decode out of the box.
+  loader.setDRACOLoader(new DRACOLoader());
   return loader;
 }
 
