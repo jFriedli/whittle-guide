@@ -1,5 +1,6 @@
 import { el, clear, toast, fmtMm } from '../app/dom';
 import { Viewer, ViewMode } from '../viewer/viewer';
+import { ARView, arSupported } from '../viewer/arOverlay';
 import { LoadedModel } from '../viewer/loaders';
 import type { NormalizeReport } from '../geometry/normalize';
 import {
@@ -37,6 +38,7 @@ export class Workspace {
   readonly root: HTMLElement;
   private viewer!: Viewer;
   private client: AnalysisClient;
+  private arView = new ARView();
   private norm: { mesh: { positions: Float32Array }; bounds: Box3; matrix: number[]; report: NormalizeReport } | null = null;
   private source: ProjectSource;
   private loaded: LoadedModel;
@@ -123,6 +125,7 @@ export class Workspace {
     const modeCard = el('div', { class: 'ctrlcard' }, [
       el('div', { class: 'ctrlcard__title' }, ['View']),
       this.modeRow(),
+      this.arRow(),
     ]);
 
     this.statsHost = el('div', { class: 'ctrlcard ctrlcard--stats' });
@@ -307,6 +310,39 @@ export class Workspace {
       el('span', { class: 'lbl', title: 'Mirror the scan across its mid-plane so templates and stages come out symmetric' }, ['Symmetry']),
       seg,
     ]);
+  }
+
+  private arRow(): HTMLElement {
+    const btn = el('button', { class: 'btn btn--ar', disabled: true }, ['Checking AR…']);
+    const row = el('div', { class: 'arrow', style: 'display:none' }, [btn]);
+    void arSupported().then((ok) => {
+      if (!ok) return; // leave the row hidden on non-AR devices
+      row.style.display = '';
+      btn.textContent = 'View in AR (1:1)';
+      btn.removeAttribute('disabled');
+      btn.addEventListener('click', () => void this.enterAR(btn));
+    });
+    return row;
+  }
+
+  private async enterAR(btn: HTMLElement): Promise<void> {
+    if (this.arView.active) return;
+    const label =
+      this.viewMode === 'stage' && this.analysis
+        ? `Stage ${this.analysis.stages[this.stageIndex].index} — ${this.analysis.stages[this.stageIndex].name}`
+        : 'Finished carving';
+    btn.setAttribute('disabled', '');
+    btn.textContent = 'Starting AR…';
+    try {
+      await this.arView.start(
+        { object: this.viewer.buildARGroup(), label, blank: this.blank },
+        () => { btn.removeAttribute('disabled'); btn.textContent = 'View in AR (1:1)'; },
+      );
+    } catch (e) {
+      btn.removeAttribute('disabled');
+      btn.textContent = 'View in AR (1:1)';
+      toast(`Couldn't start AR: ${(e as Error).message}`, 'error');
+    }
   }
 
   private modeRow(): HTMLElement {
@@ -554,6 +590,7 @@ export class Workspace {
 
   destroy() {
     window.clearTimeout(this.recomputeTimer);
+    void this.arView.stop();
     this.viewer?.dispose();
   }
 

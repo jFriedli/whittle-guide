@@ -215,6 +215,7 @@ export class App {
         el('li', {}, ['Compute orthographic depth maps and 2 / 5 / 10 mm contour maps.']),
         el('li', {}, ['Build progressive carving stages with a guaranteed "never cut into the final model" invariant.']),
         el('li', {}, ['Score carvability (undercuts, thin features, symmetry, …) and flag unsuitable models.']),
+        el('li', {}, ['On an AR-capable device, drop the finished form — or any roughing stage — into the room at 1:1 to hold against the real block.']),
         el('li', {}, ['Export a complete printable guide with a print-calibration square.']),
       ]),
       el('h2', {}, ['What it does NOT do (yet)']),

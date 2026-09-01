@@ -322,6 +322,36 @@ export class Viewer {
     return this.renderer.domElement.toDataURL('image/png');
   }
 
+  /**
+   * A fresh, detached group (own GPU resources not required — geometries and
+   * materials are shared by reference) representing what's on screen right now,
+   * for the WebXR overlay. Millimetre units, centred on the origin.
+   *
+   * Shows the smoothed carving stage when the current mode is 'stage',
+   * otherwise the placed model; always includes a wireframe of the blank so the
+   * carver can line it up with the real block.
+   */
+  buildARGroup(): THREE.Group {
+    const group = new THREE.Group();
+
+    if (this.mode === 'stage' && this.stageMesh) {
+      group.add(this.stageMesh.clone());
+    } else if (this.modelObject) {
+      const pivot = this.modelPivot.clone(true);
+      pivot.matrixAutoUpdate = false;
+      pivot.matrix.copy(this.modelPivot.matrix);
+      group.add(pivot);
+    }
+
+    const { width, height, depth } = this.blank;
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(width, height, depth)),
+      new THREE.LineBasicMaterial({ color: 0x6b4f2f }),
+    );
+    group.add(edges);
+    return group;
+  }
+
   dispose() {
     cancelAnimationFrame(this.raf);
     this.ro.disconnect();

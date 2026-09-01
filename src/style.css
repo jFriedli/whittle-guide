@@ -261,6 +261,33 @@ h1, h2, h3 { line-height: 1.25; }
 .toast--in { opacity: 1; transform: translate(-50%, 0); }
 .toast--error { border-color: #6b3d34; }
 
+/* WebXR AR */
+.arrow { margin-top: 8px; }
+.btn--ar { width: 100%; background: var(--wood); border-color: var(--wood); color: #221a10; font-weight: 600; }
+.btn--ar:hover { background: #d8b17c; }
+.btn--ar[disabled] { opacity: 0.6; cursor: default; }
+.ar-overlay {
+  position: fixed; inset: 0; z-index: 90; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  font-family: inherit;
+}
+.ar-overlay__bar {
+  pointer-events: auto; margin: 0 auto 20px; max-width: 640px; width: calc(100% - 32px);
+  display: flex; gap: 12px; align-items: center; justify-content: space-between;
+  background: rgba(20, 22, 26, 0.86); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--shadow); color: var(--text);
+}
+.ar-overlay__info { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.ar-overlay__info strong { font-size: 14px; }
+.ar-overlay__info span { color: var(--text-dim); }
+.ar-overlay__btns { display: flex; gap: 8px; flex-shrink: 0; }
+.ar-btn {
+  cursor: pointer; font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  background: var(--bg-2); border: 1px solid var(--line); color: var(--text);
+}
+.ar-btn--primary { background: var(--wood); border-color: var(--wood); color: #221a10; font-weight: 600; }
+
 .dropzone {
   position: fixed; inset: 0; z-index: 80; display: none;
   background: rgba(20, 22, 26, 0.82); backdrop-filter: blur(3px);

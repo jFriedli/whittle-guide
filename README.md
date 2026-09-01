@@ -63,6 +63,7 @@ Smithsonian; **uploaded files never leave your device**.
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
 | **Progressive analysis** — a fast low-res preview paints first, then sharpens to full resolution | ✅ |
+| **WebXR passthrough AR** — place the finished form or a roughing stage in the room at 1:1 (Android Chrome / XR headsets) | ✅ |
 | **Rust → WASM geometry kernel** (voxelisation, distance transform, silhouette + depth rasters, undercut scan) — ~8× faster analysis, bit-identical, JS fallback | ✅ |
 | Vector-quality silhouettes + high-res depth maps + contours (triangle raster, independent of the voxel grid) | ✅ |
 | Smoothed 3-D carving-stage preview (Surface Nets isosurface, not voxel cubes) | ✅ |
@@ -86,7 +87,7 @@ src/
       wikimedia.ts         Wikimedia Commons 3D (STL) live search, licence-filtered
       europeana.ts         optional, config-gated
     catalogue.generated.json   committed CC0 catalogue (see scripts/build-catalogue.mjs)
-  viewer/         three.js scene, model loaders, Surface Nets isosurface, demo models
+  viewer/         three.js scene, model loaders, Surface Nets isosurface, WebXR AR overlay, demo models
   geometry/       PURE, three.js-free, unit-tested pipeline
     mesh.ts normalize.ts blank.ts voxelize.ts distance.ts
     projection.ts contours.ts marchingSquares.ts
@@ -329,9 +330,10 @@ results:
 - **symmetry enforcement** (parity-safe grid union, mirrored-mesh raster);
 - analysis cache keying / LRU eviction;
 - progressive `run()`: coarse-then-fine ordering, supersede-rejects-older, no-worker fallback;
-- Wikimedia Commons provider: licence filtering, STL-only, error propagation.
+- Wikimedia Commons provider: licence filtering, STL-only, error propagation;
+- WebXR: `arSupported()` feature-gate, `ARView.start()` fails safe without WebXR.
 
-91 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+97 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 
