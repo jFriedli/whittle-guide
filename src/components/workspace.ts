@@ -50,7 +50,10 @@ export class Workspace {
 
   private analysis: AnalysisResult | null = null;
   private analyzing = false;
+  /** A fast coarse result is showing while the full-resolution pass finishes. */
+  private refining = false;
   private recomputeTimer = 0;
+  private recomputeToken = 0;
 
   private orientAggressive = false;
   private baseRot: Mat4 = identity();
@@ -388,9 +391,11 @@ export class Workspace {
     void src;
     const status = this.analyzing
       ? el('div', { class: 'kv' }, [el('span', { class: 'spinner spinner--sm' }), ' analysing…'])
-      : this.analysis
-        ? el('div', { class: 'kv' }, [el('span', { class: 'kv__k' }, ['Wood removed']), el('span', { class: 'kv__v' }, [`${(100 * (1 - this.analysis.solidVolumeCm3 / this.analysis.blankVolumeCm3)).toFixed(0)}%`])])
-        : el('div', { class: 'kv' }, [el('span', { class: 'kv__k' }, ['Status']), el('span', { class: 'kv__v' }, ['ready'])]);
+      : this.refining
+        ? el('div', { class: 'kv' }, [el('span', { class: 'spinner spinner--sm' }), ' refining (showing a quick preview)…'])
+        : this.analysis
+          ? el('div', { class: 'kv' }, [el('span', { class: 'kv__k' }, ['Wood removed']), el('span', { class: 'kv__v' }, [`${(100 * (1 - this.analysis.solidVolumeCm3 / this.analysis.blankVolumeCm3)).toFixed(0)}%`])])
+          : el('div', { class: 'kv' }, [el('span', { class: 'kv__k' }, ['Status']), el('span', { class: 'kv__v' }, ['ready'])]);
     this.statsHost.append(
       el('div', { class: 'ctrlcard__title' }, ['Dimensions']),
       ...rows.map(([k, v]) => el('div', { class: 'kv' }, [el('span', { class: 'kv__k' }, [k]), el('span', { class: 'kv__v' }, [v])])),
@@ -403,27 +408,53 @@ export class Workspace {
     window.clearTimeout(this.recomputeTimer);
     const go = async () => {
       if (!this.norm) return;
+      const token = ++this.recomputeToken;
+      const scale = () => autoFit(this.oriented!.bounds, this.blank, this.rotation, this.margin).placement.scale;
+      const paint = () => {
+        if (this.norm) this.renderStats(scale());
+        this.pushStageToViewer();
+        this.renderPanelArea();
+      };
+
       this.analyzing = true;
-      this.renderStats(autoFit(this.oriented!.bounds, this.blank, this.rotation, this.margin).placement.scale);
+      this.refining = false;
+      this.renderStats(scale());
       try {
         const positions = this.placedPositions();
-        const result = await this.client.run(positions, this.blank, {
-          approxCells: RESOLUTION,
-          contourIntervalMm: undefined,
-          depthQuantiseMm: 1,
-          grainAxis: this.grainAxis,
-          stageCount: this.stageCount,
-          symmetryAxis: this.symmetryAxis ?? undefined,
-        });
+        const result = await this.client.run(
+          positions,
+          this.blank,
+          {
+            approxCells: RESOLUTION,
+            contourIntervalMm: undefined,
+            depthQuantiseMm: 1,
+            grainAxis: this.grainAxis,
+            stageCount: this.stageCount,
+            symmetryAxis: this.symmetryAxis ?? undefined,
+          },
+          {
+            onPartial: (partial) => {
+              if (token !== this.recomputeToken) return;
+              this.analysis = partial;
+              this.stageIndex = Math.min(this.stageIndex, partial.stages.length - 1);
+              this.analyzing = false;
+              this.refining = true;
+              paint();
+            },
+          },
+        );
+        if (token !== this.recomputeToken) return;
         this.analysis = result;
         this.stageIndex = Math.min(this.stageIndex, result.stages.length - 1);
       } catch (e) {
+        if ((e as { superseded?: boolean }).superseded) return;
         toast(`Analysis failed: ${(e as Error).message}`, 'error');
       } finally {
-        this.analyzing = false;
-        if (this.norm) this.renderStats(autoFit(this.oriented!.bounds, this.blank, this.rotation, this.margin).placement.scale);
-        this.pushStageToViewer();
-        this.renderPanelArea();
+        if (token === this.recomputeToken) {
+          this.analyzing = false;
+          this.refining = false;
+          paint();
+        }
       }
     };
     if (immediate) void go();
@@ -470,6 +501,7 @@ export class Workspace {
         stageIndex: this.stageIndex,
         stageCount: this.stageCount,
         showRoughCuts: this.showRoughCuts,
+        refining: this.refining,
         onContourInterval: (mm) => { this.contourInterval = mm; this.renderPanelArea(); },
         onStage: (i) => { this.stageIndex = i; this.pushStageToViewer(); this.renderPanelArea(); },
         onStageCount: (n) => { this.stageCount = n; this.stageIndex = Math.min(this.stageIndex, n - 1); this.recompute(true); },

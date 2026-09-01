@@ -1,6 +1,11 @@
 /**
- * Main-thread client for the geometry worker. `analyse` requests supersede each
- * other (the user is still dragging sliders); `prepare` runs once per model.
+ * Main-thread client for the geometry worker.
+ *
+ * `run()` is progressive: given an `onPartial` hook it fires a fast low-resolution
+ * pass first (surfaced immediately) and then the full-resolution pass, which the
+ * promise resolves with. Overlapping `run()` calls supersede each other — an
+ * older call's promise rejects with a `SupersededError` and its `onPartial`
+ * stops firing. `prepare` runs once per model.
  */
 
 import type { AnalysisResult, AnalysisOptions } from '../geometry/analysis';
@@ -20,18 +25,50 @@ export interface PreparedMesh {
   report: NormalizeReport;
 }
 
+/** Thrown by `run()` when a newer `run()` has started before this one finished. */
+export class SupersededError extends Error {
+  readonly superseded = true;
+  constructor() {
+    super('analysis superseded');
+    this.name = 'SupersededError';
+  }
+}
+
+export interface RunHooks {
+  /** Called with a fast, low-resolution result while the full pass is still running. */
+  onPartial?: (result: AnalysisResult) => void;
+}
+
+/** Low-resolution variant of the options for the quick first pass. */
+export function coarseOptions(o?: AnalysisOptions): AnalysisOptions {
+  return {
+    ...o,
+    approxCells: Math.min(o?.approxCells ?? 64, 44),
+    silhouetteResolution: 150,
+    depthResolution: 120,
+  };
+}
+
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; kind: 'analyse' | 'prepare' };
 
 export class AnalysisClient {
   private worker: Worker | null = null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
-  private latestAnalyse = 0;
+  private currentGen = 0;
   private cache = new AnalysisCache();
 
-  constructor() {
-    try {
-      this.worker = new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' });
+  constructor(worker?: Worker | null) {
+    if (worker !== undefined) {
+      this.worker = worker;
+    } else {
+      try {
+        this.worker = new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' });
+      } catch {
+        this.worker = null;
+      }
+    }
+    if (this.worker) {
       this.worker.onmessage = (ev: MessageEvent<WorkerResponse>) => {
         const msg = ev.data;
         const entry = this.pending.get(msg.id);
@@ -44,7 +81,6 @@ export class AnalysisClient {
         if (msg.kind === 'bestOrient') {
           entry.resolve(msg.result);
         } else if (msg.kind === 'analyse') {
-          if (msg.id < this.latestAnalyse) return; // superseded
           entry.resolve(msg.result);
         } else {
           entry.resolve({
@@ -59,8 +95,6 @@ export class AnalysisClient {
         for (const [, entry] of this.pending) entry.reject(new Error(e.message || 'worker error'));
         this.pending.clear();
       };
-    } catch {
-      this.worker = null;
     }
   }
 
@@ -89,19 +123,43 @@ export class AnalysisClient {
     });
   }
 
-  async run(positions: Float32Array, blank: Blank, options?: AnalysisOptions): Promise<AnalysisResult> {
-    const id = this.nextId++;
-    this.latestAnalyse = id;
+  async run(
+    positions: Float32Array,
+    blank: Blank,
+    options?: AnalysisOptions,
+    hooks?: RunHooks,
+  ): Promise<AnalysisResult> {
+    const gen = ++this.currentGen;
 
+    // Quick coarse pass — only worth a second worker round-trip when the full
+    // pass is meaningfully heavier and someone is listening.
+    if (hooks?.onPartial && this.worker && (options?.approxCells ?? 64) > 52) {
+      this.analyseOnce(positions, blank, coarseOptions(options))
+        .then((r) => {
+          if (gen === this.currentGen) hooks.onPartial!(r);
+        })
+        .catch(() => {
+          /* a coarse-pass failure is non-fatal; the full pass still runs */
+        });
+    }
+
+    const fine = await this.analyseOnce(positions, blank, options);
+    if (gen !== this.currentGen) throw new SupersededError();
+    return fine;
+  }
+
+  /** One analysis request (cache-checked), resolving whenever the worker replies. */
+  private analyseOnce(positions: Float32Array, blank: Blank, options?: AnalysisOptions): Promise<AnalysisResult> {
     const key = analysisKey(positions, blank, options);
     const cached = this.cache.get(key);
-    if (cached) return cached;
+    if (cached) return Promise.resolve(cached);
 
     if (!this.worker) {
       const result = analyse({ positions }, blank, options);
       this.cache.set(key, result);
-      return result;
+      return Promise.resolve(result);
     }
+    const id = this.nextId++;
     const copy = positions.slice();
     const req: AnalyseRequestLike = { id, kind: 'analyse', positions: copy.buffer, blank, options };
     return new Promise<AnalysisResult>((resolve, reject) => {

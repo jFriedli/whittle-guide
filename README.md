@@ -62,6 +62,7 @@ Smithsonian; **uploaded files never leave your device**.
 | Drag-and-drop upload anywhere on the page | ✅ |
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
+| **Progressive analysis** — a fast low-res preview paints first, then sharpens to full resolution | ✅ |
 | **Rust → WASM geometry kernel** (voxelisation, distance transform, silhouette + depth rasters, undercut scan) — ~8× faster analysis, bit-identical, JS fallback | ✅ |
 | Vector-quality silhouettes + high-res depth maps + contours (triangle raster, independent of the voxel grid) | ✅ |
 | Smoothed 3-D carving-stage preview (Surface Nets isosurface, not voxel cubes) | ✅ |
@@ -327,9 +328,10 @@ results:
 - **roughing cut-line nesting**, per-stage tool hints, hollowing suggestion;
 - **symmetry enforcement** (parity-safe grid union, mirrored-mesh raster);
 - analysis cache keying / LRU eviction;
+- progressive `run()`: coarse-then-fine ordering, supersede-rejects-older, no-worker fallback;
 - Wikimedia Commons provider: licence filtering, STL-only, error propagation.
 
-85 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+91 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 

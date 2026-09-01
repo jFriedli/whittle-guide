@@ -14,6 +14,8 @@ export interface PanelContext {
   stageIndex: number;
   stageCount: number;
   showRoughCuts: boolean;
+  /** A fast low-res preview is showing; the full-resolution pass is still running. */
+  refining?: boolean;
   onContourInterval: (mm: number) => void;
   onStage: (i: number) => void;
   onStageCount: (n: number) => void;
@@ -86,6 +88,15 @@ function templateFigure(ctx: PanelContext, view: ViewName, withContours = false,
 export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
   const a = ctx.analysis;
   const root = el('div', { class: 'panel' });
+
+  if (ctx.refining) {
+    root.append(
+      el('div', { class: 'banner banner--note' }, [
+        el('span', { class: 'spinner spinner--sm' }),
+        ' Quick preview — sharpening templates, depth maps and stages at full resolution…',
+      ]),
+    );
+  }
 
   if (!a.stageInvariant.ok) {
     root.append(
