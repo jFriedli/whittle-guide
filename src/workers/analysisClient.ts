@@ -10,6 +10,7 @@ import type { Box3 } from '../geometry/mesh';
 import type { WorkerRequest, WorkerResponse } from './analysis.worker';
 import { analyse } from '../geometry/analysis';
 import { normalizeMesh } from '../geometry/normalize';
+import { findBestOrientation, type BestOrientationResult } from '../geometry/bestOrientation';
 
 export interface PreparedMesh {
   positions: Float32Array;
@@ -38,7 +39,9 @@ export class AnalysisClient {
           entry.reject(new Error(msg.error));
           return;
         }
-        if (msg.kind === 'analyse') {
+        if (msg.kind === 'bestOrient') {
+          entry.resolve(msg.result);
+        } else if (msg.kind === 'analyse') {
           if (msg.id < this.latestAnalyse) return; // superseded
           entry.resolve(msg.result);
         } else {
@@ -73,6 +76,17 @@ export class AnalysisClient {
     });
   }
 
+  async bestOrientation(positions: Float32Array, blank: Blank): Promise<BestOrientationResult> {
+    if (!this.worker) return findBestOrientation({ positions }, blank);
+    const id = this.nextId++;
+    const copy = positions.slice();
+    const req: BestOrientRequestLike = { id, kind: 'bestOrient', positions: copy.buffer, blank };
+    return new Promise<BestOrientationResult>((resolve, reject) => {
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, kind: 'analyse' });
+      this.worker!.postMessage(req as WorkerRequest, [copy.buffer]);
+    });
+  }
+
   async run(positions: Float32Array, blank: Blank, options?: AnalysisOptions): Promise<AnalysisResult> {
     const id = this.nextId++;
     this.latestAnalyse = id;
@@ -98,6 +112,12 @@ interface AnalyseRequestLike {
   positions: ArrayBuffer;
   blank: Blank;
   options?: AnalysisOptions;
+}
+interface BestOrientRequestLike {
+  id: number;
+  kind: 'bestOrient';
+  positions: ArrayBuffer;
+  blank: Blank;
 }
 interface PrepareRequestLike {
   id: number;

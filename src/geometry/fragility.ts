@@ -116,19 +116,13 @@ export function analyseFragility(
   const { nx, ny, data, d } = g;
   const { field } = localThickness(g);
 
-  // Centroid of the thick core for the cross-grain test.
-  let cxs = 0, cys = 0, czs = 0, cn = 0;
-  for (let i = 0; i < data.length; i++)
-    if (data[i] && field[i] >= thinThresholdMm) {
-      const x = i % nx;
-      const y = ((i - x) / nx) % ny;
-      const z = Math.floor(i / (nx * ny));
-      cxs += x; cys += y; czs += z; cn++;
-    }
-  const cc = cn ? [cxs / cn, cys / cn, czs / cn] : [nx / 2, ny / 2, (data.length / (nx * ny)) / 2];
-
   const mask = new Uint8Array(data.length);
-  let solid = 0, thin = 0, crossGrain = 0;
+  let solid = 0, thin = 0;
+  // For the cross-grain measure: PCA of the thin-voxel cloud. A thin region
+  // whose spread is mostly perpendicular to the grain (a cantilevered arm) is
+  // the one that snaps; a thin region that runs with the grain (a tall neck) is
+  // relatively safe.
+  let sx = 0, sy = 0, sz = 0;
   for (let i = 0; i < data.length; i++) {
     if (!data[i]) continue;
     solid++;
@@ -138,17 +132,32 @@ export function analyseFragility(
     const x = i % nx;
     const y = ((i - x) / nx) % ny;
     const z = Math.floor(i / (nx * ny));
-    const dv = [(x - cc[0]) * d[0], (y - cc[1]) * d[1], (z - cc[2]) * d[2]];
-    const along = Math.abs(dv[grainAxis]);
-    const across = Math.hypot(...dv.filter((_, a) => a !== grainAxis));
-    if (across > along * 1.2 && across > thinThresholdMm) crossGrain++;
+    sx += x; sy += y; sz += z;
+  }
+
+  let crossGrainFraction = 0;
+  if (thin >= 8) {
+    const mxc = sx / thin, myc = sy / thin, mzc = sz / thin;
+    let vAlong = 0, vAcross = 0;
+    for (let i = 0; i < data.length; i++) {
+      if (!mask[i]) continue;
+      const x = i % nx;
+      const y = ((i - x) / nx) % ny;
+      const z = Math.floor(i / (nx * ny));
+      const dv = [(x - mxc) * d[0], (y - myc) * d[1], (z - mzc) * d[2]];
+      vAlong += dv[grainAxis] * dv[grainAxis];
+      vAcross += dv[(grainAxis + 1) % 3] ** 2 + dv[(grainAxis + 2) % 3] ** 2;
+    }
+    // vAcross covers 2 axes; halve it for a fair per-axis comparison.
+    const across = vAcross / 2;
+    crossGrainFraction = across + vAlong > 0 ? across / (across + vAlong) : 0;
   }
 
   return {
     mask,
     minThicknessMm: Math.round(estimateMinFeatureMm(g) * 10) / 10,
     fraction: solid ? thin / solid : 0,
-    crossGrainFraction: thin ? crossGrain / thin : 0,
+    crossGrainFraction,
     thinThresholdMm,
   };
 }

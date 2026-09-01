@@ -9,6 +9,7 @@ import { analyse, AnalysisOptions, AnalysisResult } from '../geometry/analysis';
 import { Blank } from '../geometry/blank';
 import { normalizeMesh, NormalizeOptions, NormalizeReport } from '../geometry/normalize';
 import { Box3 } from '../geometry/mesh';
+import { findBestOrientation, BestOrientationResult } from '../geometry/bestOrientation';
 import { initKernel } from '../geometry/wasm';
 
 // Load the WASM kernel once; work falls back to pure TS until it resolves.
@@ -29,11 +30,19 @@ export interface PrepareRequest {
   options?: NormalizeOptions;
 }
 
-export type WorkerRequest = AnalyseRequest | PrepareRequest;
+export interface BestOrientRequest {
+  id: number;
+  kind: 'bestOrient';
+  positions: ArrayBuffer;
+  blank: Blank;
+}
+
+export type WorkerRequest = AnalyseRequest | PrepareRequest | BestOrientRequest;
 
 export type WorkerResponse =
   | { id: number; ok: true; kind: 'analyse'; result: AnalysisResult }
   | { id: number; ok: true; kind: 'prepare'; positions: ArrayBuffer; matrix: number[]; bounds: Box3; report: NormalizeReport }
+  | { id: number; ok: true; kind: 'bestOrient'; result: BestOrientationResult }
   | { id: number; ok: false; error: string };
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
@@ -43,6 +52,12 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
   try {
     await kernelReady;
+
+    if (req.kind === 'bestOrient') {
+      const result = findBestOrientation({ positions: new Float32Array(req.positions) }, req.blank);
+      post({ id: req.id, ok: true, kind: 'bestOrient', result });
+      return;
+    }
 
     if (req.kind === 'prepare') {
       const norm = normalizeMesh({ positions: new Float32Array(req.positions) }, req.options);

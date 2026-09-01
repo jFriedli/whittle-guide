@@ -5,7 +5,7 @@ import type { NormalizeReport } from '../geometry/normalize';
 import {
   Blank, Placement, defaultBlank, autoFit, placementMatrix, defaultPlacement, rotatedBoxSize,
 } from '../geometry/blank';
-import { applyMatrix4, multiply, boxSize, Box3, Vec3 } from '../geometry/mesh';
+import { applyMatrix4, multiply, boxSize, computeBounds, identity, Box3, Mat4, Vec3 } from '../geometry/mesh';
 import { AnalysisClient, PreparedMesh } from '../workers/analysisClient';
 import { AnalysisResult } from '../geometry/analysis';
 import { renderPanel, PanelTab, stageRemovedMask } from './panels';
@@ -52,6 +52,8 @@ export class Workspace {
   private recomputeTimer = 0;
 
   private orientAggressive = false;
+  private baseRot: Mat4 = identity();
+  private oriented: { positions: Float32Array; bounds: Box3 } | null = null;
   private grainAxis: 0 | 1 | 2 = 1;
   private stageCount = 9;
   private tab: PanelTab = 'silhouette';
@@ -103,7 +105,10 @@ export class Workspace {
       ]),
       el('div', { class: 'btnrow' }, [
         this.button('Auto-orient', () => this.reprepare(!this.orientAggressive)),
-        this.button('Centre & reset', () => { this.rotation = [0, 0, 0]; this.userScale = 1; this.applyPlacement(); this.recompute(); }),
+        this.button('Best for carving', () => void this.findBestOrientation()),
+      ]),
+      el('div', { class: 'btnrow' }, [
+        this.button('Centre & reset', () => { this.baseRot = identity(); this.rotation = [0, 0, 0]; this.userScale = 1; this.rebuildOriented(); this.applyPlacement(); this.recompute(); }),
         this.button('Reset camera', () => this.viewer.resetCamera()),
       ]),
     ]);
@@ -176,8 +181,34 @@ export class Workspace {
       toast(`Mesh preparation failed: ${(e as Error).message}`, 'error');
       return;
     }
+    this.baseRot = identity();
+    this.rebuildOriented();
     this.applyPlacement();
     this.recompute(true);
+  }
+
+  private async findBestOrientation() {
+    if (!this.norm || !this.oriented) return;
+    toast('Searching orientations…');
+    try {
+      const res = await this.client.bestOrientation(this.oriented.positions, this.blank);
+      if (!res.changed) {
+        toast('Current orientation already carves best.');
+        return;
+      }
+      // Compose onto the current base rotation.
+      this.baseRot = multiply(res.rotation, this.baseRot);
+      this.rotation = [0, 0, 0];
+      this.userScale = 1;
+      this.rebuildOriented();
+      this.applyPlacement();
+      this.recompute(true);
+      toast(
+        `Re-oriented: undercuts ${(res.scores.undercut * 100).toFixed(0)}% → carve-friendly.`,
+      );
+    } catch (e) {
+      toast(`Orientation search failed: ${(e as Error).message}`, 'error');
+    }
   }
 
   private button(label: string, on: () => void): HTMLElement {
@@ -295,27 +326,32 @@ export class Workspace {
     this.recompute();
   }
 
+  private rebuildOriented() {
+    if (!this.norm) return;
+    const positions = applyMatrix4(this.norm.mesh, this.baseRot).positions;
+    this.oriented = { positions, bounds: computeBounds({ positions }) };
+  }
+
   /** Recompute the fitted placement and update the viewer transform + stats. */
   private applyPlacement() {
-    if (!this.norm) return;
-    const fit = autoFit(this.norm.bounds, this.blank, this.rotation, this.margin);
+    if (!this.norm || !this.oriented) return;
+    const fit = autoFit(this.oriented.bounds, this.blank, this.rotation, this.margin);
     this.placement = { translation: [0, 0, 0], rotation: this.rotation, scale: fit.placement.scale * this.userScale };
-    const pm = placementMatrix(this.placement, this.norm.bounds);
-    if (this.viewer) this.viewer.setModelMatrix(multiply(pm, this.norm.matrix));
+    const pm = placementMatrix(this.placement, this.oriented.bounds);
+    if (this.viewer) this.viewer.setModelMatrix(multiply(multiply(pm, this.baseRot), this.norm.matrix));
     this.renderStats(fit.placement.scale);
   }
 
   private placedPositions(): Float32Array {
-    const norm = this.norm!;
-    const pm = placementMatrix(this.placement, norm.bounds);
-    return applyMatrix4(norm.mesh, pm).positions;
+    const pm = placementMatrix(this.placement, this.oriented!.bounds);
+    return applyMatrix4({ positions: this.oriented!.positions }, pm).positions;
   }
 
   private renderStats(autoScale: number) {
     if (!this.statsHost || !this.norm) return;
     clear(this.statsHost);
-    const rot = rotatedBoxSize(this.norm.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
-    const src = boxSize(this.norm.bounds);
+    const rot = rotatedBoxSize(this.oriented!.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
+    const src = boxSize(this.oriented!.bounds);
     const rows: [string, string][] = [
       ['Blank', `${fmtMm(this.blank.width, this.units)} × ${fmtMm(this.blank.height, this.units)} × ${fmtMm(this.blank.depth, this.units)}`],
       ['Final model', `${rot.map((v) => fmtMm(v, this.units)).join(' × ')}`],
@@ -343,7 +379,7 @@ export class Workspace {
     const go = async () => {
       if (!this.norm) return;
       this.analyzing = true;
-      this.renderStats(autoFit(this.norm.bounds, this.blank, this.rotation, this.margin).placement.scale);
+      this.renderStats(autoFit(this.oriented!.bounds, this.blank, this.rotation, this.margin).placement.scale);
       try {
         const positions = this.placedPositions();
         const result = await this.client.run(positions, this.blank, {
@@ -359,7 +395,7 @@ export class Workspace {
         toast(`Analysis failed: ${(e as Error).message}`, 'error');
       } finally {
         this.analyzing = false;
-        if (this.norm) this.renderStats(autoFit(this.norm.bounds, this.blank, this.rotation, this.margin).placement.scale);
+        if (this.norm) this.renderStats(autoFit(this.oriented!.bounds, this.blank, this.rotation, this.margin).placement.scale);
         this.pushStageToViewer();
         this.renderPanelArea();
       }
@@ -419,7 +455,7 @@ export class Workspace {
 
   private openGuide() {
     if (!this.analysis || !this.norm) return;
-    const rot = rotatedBoxSize(this.norm.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
+    const rot = rotatedBoxSize(this.oriented!.bounds, this.rotation).map((v) => v * this.placement.scale) as Vec3;
     const html = buildGuideHtml(
       {
         title: this.source.title,
