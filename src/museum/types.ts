@@ -28,9 +28,9 @@ export interface MuseumObject {
   institution?: string;
   /** Approximate date or period, free text. */
   period?: string;
-  /** Direct URL to a browser-friendly GLB/glTF (low/medium resolution). */
+  /** Direct URL to a browser-friendly model (low/medium resolution). */
   modelUrl: string;
-  modelFormat: 'glb' | 'gltf';
+  modelFormat: 'glb' | 'gltf' | 'stl';
   /** Preview image URL, when known. */
   thumbnailUrl?: string;
   /** Human-readable reuse terms, e.g. "CC0". */

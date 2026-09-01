@@ -107,7 +107,15 @@ export function renderLibrary(library: MuseumLibrary, cb: LibraryCallbacks): HTM
         ]),
         el('div', { class: 'card__row' }, [
           stars,
-          el('span', { class: `tag ${obj.curated ? 'tag--ok' : 'tag--warn'}` }, [obj.license.includes('CC0') ? 'CC0' : obj.curated ? obj.license : 'verify terms']),
+          el('span', { class: `tag ${obj.curated || /^cc0|public domain|^pdm/i.test(obj.license) ? 'tag--ok' : 'tag--warn'}` }, [
+            obj.license.includes('CC0')
+              ? 'CC0'
+              : obj.curated
+                ? obj.license
+                : /^(cc[- ]by|public domain|pdm)/i.test(obj.license)
+                  ? obj.license + ' — verify'
+                  : 'verify terms',
+          ]),
         ]),
         obj.carvingNote ? el('p', { class: 'card__note' }, [obj.carvingNote]) : null,
         el('div', { class: 'card__row' }, [

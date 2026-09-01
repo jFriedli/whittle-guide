@@ -5,6 +5,7 @@
 import { MuseumObject, MuseumProvider, SearchQuery, CarvingCategory } from './types';
 import { SmithsonianProvider } from './providers/smithsonian';
 import { EuropeanaProvider } from './providers/europeana';
+import { WikimediaProvider } from './providers/wikimedia';
 
 export const CATEGORIES: CarvingCategory[] = [
   'Figures', 'Busts', 'Sculpture', 'Ancient', 'Ritual', 'Animals', 'Vessels', 'Masks', 'Archaeology',
@@ -14,7 +15,7 @@ export class MuseumLibrary {
   private providers: MuseumProvider[];
 
   constructor(providers?: MuseumProvider[]) {
-    this.providers = (providers ?? [new SmithsonianProvider(), new EuropeanaProvider()]).filter((p) =>
+    this.providers = (providers ?? [new SmithsonianProvider(), new WikimediaProvider(), new EuropeanaProvider()]).filter((p) =>
       p.isEnabled(),
     );
   }

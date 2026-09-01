@@ -194,7 +194,9 @@ export class App {
       el('p', {}, [
         '3D models courtesy of ',
         el('a', { href: 'https://3d.si.edu', target: '_blank', rel: 'noopener' }, ['Smithsonian Open Access']),
-        ' (CC0). WhittleGuide is open source and runs entirely in your browser — uploaded models never leave your device.',
+        ' (CC0) and ',
+        el('a', { href: 'https://commons.wikimedia.org', target: '_blank', rel: 'noopener' }, ['Wikimedia Commons']),
+        '. WhittleGuide is open source and runs entirely in your browser — uploaded models never leave your device.',
       ]),
     ]);
   }
@@ -207,7 +209,7 @@ export class App {
       ]),
       el('h2', {}, ['What it does today']),
       el('ul', {}, [
-        el('li', {}, ['Browse real Smithsonian Open Access 3D scans, or load your own .glb / .gltf / .obj / .stl / .ply / .fbx / .3mf.']),
+        el('li', {}, ['Browse real Smithsonian Open Access and Wikimedia Commons 3D scans, or load your own .glb / .gltf / .obj / .stl / .ply / .fbx / .3mf.']),
         el('li', {}, ['Place and scale the model inside a wooden blank with real millimetre dimensions and auto-fit.']),
         el('li', {}, ['Generate 1:1 printable SVG templates for all six faces.']),
         el('li', {}, ['Compute orthographic depth maps and 2 / 5 / 10 mm contour maps.']),
@@ -220,7 +222,7 @@ export class App {
         'This is geometry-based assistance. It does not plan individual knife strokes, choose gouges, reason about wood grain, or work out a grain-aware order of operations. Treat the generated cuts and stages as guidance, not instructions — and always carve within your own judgement.',
       ]),
       el('h2', {}, ['Privacy']),
-      el('p', {}, ['Everything runs client-side. Museum models are fetched directly from the Smithsonian; uploaded files are read in-page and never transmitted.']),
+      el('p', {}, ['Everything runs client-side. Museum models are fetched directly from the Smithsonian and Wikimedia Commons; uploaded files are read in-page and never transmitted.']),
       el('p', {}, [el('a', { class: 'btn', href: 'https://github.com/jFriedli/whittle-guide', target: '_blank', rel: 'noopener' }, ['Source & documentation on GitHub'])]),
     ]);
   }
