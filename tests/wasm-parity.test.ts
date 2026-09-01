@@ -8,6 +8,11 @@ import { normalizeMesh } from '../src/geometry/normalize';
 import { autoFit, defaultBlank, placementMatrix } from '../src/geometry/blank';
 import { voxelize, countSolid } from '../src/geometry/voxelize';
 import { distanceToSolid, dilate } from '../src/geometry/distance';
+import { silhouette } from '../src/geometry/silhouette';
+import { depthField, FACE_DEPTH_VIEWS } from '../src/geometry/depthField';
+import { undercutMask } from '../src/geometry/undercuts';
+import { viewFrame, frameAxes } from '../src/geometry/viewGeometry';
+import { ALL_VIEWS } from '../src/geometry/projection';
 
 const WASM = resolve(__dirname, '../src/geometry/wasm/kernel.wasm');
 const hasWasm = existsSync(WASM);
@@ -85,6 +90,79 @@ describe.skipIf(!hasWasm)('WASM kernel parity with the TS reference', () => {
       maxAbs = Math.max(maxAbs, Math.abs(tsD[i] - wasmD[i]));
     }
     expect(maxAbs).toBeLessThan(0.05);
+  });
+
+  it('frameAxes matches viewFrame closures for every view', () => {
+    const b = { width: 40, height: 100, depth: 40 };
+    const pts: [number, number, number][] = [
+      [0, 0, 0], [7, -3, 11], [-13, 21, -5], [19, -47, 18],
+    ];
+    for (const view of ALL_VIEWS) {
+      const vf = viewFrame(view, b);
+      const fa = frameAxes(view, b);
+      const map = (a: typeof fa.u, p: [number, number, number]) => p[a.axis] * a.sign + a.off;
+      for (const p of pts) {
+        expect(map(fa.u, p)).toBeCloseTo(vf.toU(p), 9);
+        expect(map(fa.v, p)).toBeCloseTo(vf.toV(p), 9);
+        expect(map(fa.w, p)).toBeCloseTo(vf.depth(p), 9);
+      }
+    }
+  });
+
+  it('raster_silhouette mask is bit-identical to the TS raster', () => {
+    const { positions, blank } = placed();
+    for (const view of ALL_VIEWS) {
+      setKernel(null);
+      const ts = silhouette({ positions }, blank, view, { resolution: 320 });
+      setKernel(kernel);
+      const wasm = silhouette({ positions }, blank, view, { resolution: 320 });
+      expect(wasm.coverage).toBeCloseTo(ts.coverage, 12);
+      expect(wasm.extentMm).toEqual(ts.extentMm);
+      expect(wasm.polylines.length).toBe(ts.polylines.length);
+    }
+  });
+
+  it('raster_depth agrees with the TS z-buffer to the last mm', () => {
+    const { positions, blank } = placed();
+    for (const view of FACE_DEPTH_VIEWS) {
+      setKernel(null);
+      const ts = depthField({ positions }, blank, view, { resolution: 260, quantiseMm: 0 });
+      setKernel(kernel);
+      const wasm = depthField({ positions }, blank, view, { resolution: 260, quantiseMm: 0 });
+      expect(wasm.depth.length).toBe(ts.depth.length);
+      let maxAbs = 0;
+      let mismatchedSurface = 0;
+      for (let i = 0; i < ts.depth.length; i++) {
+        const a = ts.depth[i], b = wasm.depth[i];
+        if (a < 0 || b < 0) {
+          if ((a < 0) !== (b < 0)) mismatchedSurface++;
+          continue;
+        }
+        maxAbs = Math.max(maxAbs, Math.abs(a - b));
+      }
+      expect(mismatchedSurface).toBe(0);
+      expect(maxAbs).toBeLessThan(1e-3);
+    }
+  });
+
+  it('undercut_mask is bit-identical to the TS scan', () => {
+    for (const mesh of [makePawn(), makeCone(1, 2, 40)]) {
+      const { positions, blank } = placed(mesh);
+      setKernel(null);
+      const g = voxelize({ positions }, blank, { approxCells: 48 });
+
+      setKernel(null);
+      const ts = undercutMask(g);
+      setKernel(kernel);
+      const wasm = undercutMask(g);
+
+      let diff = 0;
+      for (let i = 0; i < ts.mask.length; i++) if (ts.mask[i] !== wasm.mask[i]) diff++;
+      expect(diff).toBe(0);
+      expect(wasm.surfaceVoxels).toBe(ts.surfaceVoxels);
+      expect(wasm.undercutVoxels).toBe(ts.undercutVoxels);
+      expect(wasm.fraction).toBeCloseTo(ts.fraction, 12);
+    }
   });
 
   it('dilate masks are identical at carving margins', () => {

@@ -22,6 +22,45 @@ export interface ViewFrame {
   depth: (p: Vec3) => number;
 }
 
+/** One in-plane / depth axis as an affine map: `coord = p[axis] * sign + off`. */
+export interface FrameAxis {
+  axis: 0 | 1 | 2;
+  sign: 1 | -1;
+  off: number;
+}
+
+export interface FrameAxes {
+  u: FrameAxis;
+  v: FrameAxis;
+  /** Depth into the face. */
+  w: FrameAxis;
+}
+
+/**
+ * The same face frame as `viewFrame`, expressed as three per-axis affine maps.
+ * Used to drive the WASM rasteriser (which is view-agnostic); `viewFrame` stays
+ * the reference for the pure-TS path. Kept here so the two never drift.
+ */
+export function frameAxes(view: ViewName, b: Blank): FrameAxes {
+  const W = b.width, H = b.height, D = b.depth;
+  switch (view) {
+    case 'front':
+      return { u: { axis: 0, sign: 1, off: W / 2 }, v: { axis: 1, sign: 1, off: H / 2 }, w: { axis: 2, sign: -1, off: D / 2 } };
+    case 'back':
+      return { u: { axis: 0, sign: -1, off: W / 2 }, v: { axis: 1, sign: 1, off: H / 2 }, w: { axis: 2, sign: 1, off: D / 2 } };
+    case 'left':
+      return { u: { axis: 2, sign: 1, off: D / 2 }, v: { axis: 1, sign: 1, off: H / 2 }, w: { axis: 0, sign: 1, off: W / 2 } };
+    case 'right':
+      return { u: { axis: 2, sign: -1, off: D / 2 }, v: { axis: 1, sign: 1, off: H / 2 }, w: { axis: 0, sign: -1, off: W / 2 } };
+    case 'top':
+      return { u: { axis: 0, sign: 1, off: W / 2 }, v: { axis: 2, sign: -1, off: D / 2 }, w: { axis: 1, sign: -1, off: H / 2 } };
+    case 'bottom':
+      return { u: { axis: 0, sign: 1, off: W / 2 }, v: { axis: 2, sign: 1, off: D / 2 }, w: { axis: 1, sign: 1, off: H / 2 } };
+    default:
+      throw new Error(`unknown view: ${view as string}`);
+  }
+}
+
 export function viewFrame(view: ViewName, b: Blank): ViewFrame {
   const W = b.width, H = b.height, D = b.depth;
   switch (view) {

@@ -14,8 +14,9 @@
 import { Mesh } from './mesh';
 import { Blank } from './blank';
 import { ViewName } from './projection';
-import { viewFrame } from './viewGeometry';
+import { viewFrame, frameAxes } from './viewGeometry';
 import { Grid2D, isoSegments, stitch } from './marchingSquares';
+import { getKernel } from './wasm';
 
 export interface SilhouetteResult {
   view: ViewName;
@@ -46,44 +47,18 @@ export function silhouette(mesh: Mesh, blank: Blank, view: ViewName, opts: Silho
   const dx = frame.widthMm / cols;
   const dy = frame.heightMm / rows;
 
-  const mask = new Uint8Array(cols * rows);
-  const p = mesh.positions;
-
-  for (let t = 0; t < p.length; t += 9) {
-    const ax = frame.toU([p[t], p[t + 1], p[t + 2]]) / dx;
-    const ay = frame.toV([p[t], p[t + 1], p[t + 2]]) / dy;
-    const bx = frame.toU([p[t + 3], p[t + 4], p[t + 5]]) / dx;
-    const by = frame.toV([p[t + 3], p[t + 4], p[t + 5]]) / dy;
-    const cx = frame.toU([p[t + 6], p[t + 7], p[t + 8]]) / dx;
-    const cy = frame.toV([p[t + 6], p[t + 7], p[t + 8]]) / dy;
-
-    let minX = Math.floor(Math.min(ax, bx, cx));
-    let maxX = Math.ceil(Math.max(ax, bx, cx));
-    let minY = Math.floor(Math.min(ay, by, cy));
-    let maxY = Math.ceil(Math.max(ay, by, cy));
-    if (minX < 0) minX = 0;
-    if (minY < 0) minY = 0;
-    if (maxX > cols) maxX = cols;
-    if (maxY > rows) maxY = rows;
-    if (minX >= maxX || minY >= maxY) continue;
-
-    const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
-    if (Math.abs(det) < 1e-12) {
-      // Degenerate in projection: still stamp its bbox thinly so hairlines show.
-      continue;
-    }
-    const inv = 1 / det;
-    for (let iy = minY; iy < maxY; iy++) {
-      const sy = iy + 0.5;
-      for (let ix = minX; ix < maxX; ix++) {
-        const sx = ix + 0.5;
-        const l1 = ((by - cy) * (sx - cx) + (cx - bx) * (sy - cy)) * inv;
-        const l2 = ((cy - ay) * (sx - cx) + (ax - cx) * (sy - cy)) * inv;
-        const l3 = 1 - l1 - l2;
-        if (l1 >= -1e-7 && l2 >= -1e-7 && l3 >= -1e-7) mask[iy * cols + ix] = 1;
-      }
+  let mask: Uint8Array | null = null;
+  const kernel = getKernel();
+  if (kernel) {
+    try {
+      const fa = frameAxes(view, blank);
+      mask = kernel.rasterSilhouette(mesh.positions, cols, rows, dx, dy, fa.u, fa.v);
+    } catch {
+      mask = null;
     }
   }
+
+  if (!mask) mask = rasterSilhouetteJs(mesh, frame, cols, rows, dx, dy);
 
   // Trace outline (pad by 1 so border-touching shapes close).
   const pc = cols + 2, pr = rows + 2;
@@ -126,6 +101,57 @@ export function silhouette(mesh: Mesh, blank: Blank, view: ViewName, opts: Silho
     coverage: covered / (cols * rows),
     extentMm,
   };
+}
+
+/** Pure-TS projected-triangle coverage raster (reference + fallback). */
+function rasterSilhouetteJs(
+  mesh: Mesh,
+  frame: ReturnType<typeof viewFrame>,
+  cols: number,
+  rows: number,
+  dx: number,
+  dy: number,
+): Uint8Array {
+  const mask = new Uint8Array(cols * rows);
+  const p = mesh.positions;
+
+  for (let t = 0; t < p.length; t += 9) {
+    const ax = frame.toU([p[t], p[t + 1], p[t + 2]]) / dx;
+    const ay = frame.toV([p[t], p[t + 1], p[t + 2]]) / dy;
+    const bx = frame.toU([p[t + 3], p[t + 4], p[t + 5]]) / dx;
+    const by = frame.toV([p[t + 3], p[t + 4], p[t + 5]]) / dy;
+    const cx = frame.toU([p[t + 6], p[t + 7], p[t + 8]]) / dx;
+    const cy = frame.toV([p[t + 6], p[t + 7], p[t + 8]]) / dy;
+
+    let minX = Math.floor(Math.min(ax, bx, cx));
+    let maxX = Math.ceil(Math.max(ax, bx, cx));
+    let minY = Math.floor(Math.min(ay, by, cy));
+    let maxY = Math.ceil(Math.max(ay, by, cy));
+    if (minX < 0) minX = 0;
+    if (minY < 0) minY = 0;
+    if (maxX > cols) maxX = cols;
+    if (maxY > rows) maxY = rows;
+    if (minX >= maxX || minY >= maxY) continue;
+
+    const det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (Math.abs(det) < 1e-12) {
+      // Degenerate in projection: still stamp its bbox thinly so hairlines show.
+      continue;
+    }
+    const inv = 1 / det;
+    for (let iy = minY; iy < maxY; iy++) {
+      const sy = iy + 0.5;
+      for (let ix = minX; ix < maxX; ix++) {
+        const sx = ix + 0.5;
+        const l1 = ((by - cy) * (sx - cx) + (cx - bx) * (sy - cy)) * inv;
+        const l2 = ((cy - ay) * (sx - cx) + (ax - cx) * (sy - cy)) * inv;
+        const l3 = 1 - l1 - l2;
+        if (l1 >= -1e-7 && l2 >= -1e-7 && l3 >= -1e-7) mask[iy * cols + ix] = 1;
+      }
+    }
+  }
+
+  return mask;
 }
 
 /** Douglas–Peucker on an open polyline segment [lo, hi] (inclusive). */

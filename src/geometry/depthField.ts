@@ -11,7 +11,8 @@
 import { Mesh, Vec3 } from './mesh';
 import { Blank } from './blank';
 import { ViewName } from './projection';
-import { viewFrame } from './viewGeometry';
+import { viewFrame, frameAxes } from './viewGeometry';
+import { getKernel } from './wasm';
 
 /** The four faces we generate depth maps + contours for. */
 export const FACE_DEPTH_VIEWS: ViewName[] = ['front', 'back', 'left', 'right'];
@@ -47,6 +48,44 @@ export function depthField(mesh: Mesh, blank: Blank, view: ViewName, opts: Depth
   const step = opts.quantiseMm ?? 1;
 
   // z-buffer of nearest (smallest) depth
+  let zbuf: Float32Array | null = null;
+  const kernel = getKernel();
+  if (kernel) {
+    try {
+      const fa = frameAxes(view, blank);
+      zbuf = kernel.rasterDepth(mesh.positions, cols, rows, dx, dy, fa.u, fa.v, fa.w);
+    } catch {
+      zbuf = null;
+    }
+  }
+  if (!zbuf) zbuf = rasterDepthJs(mesh, frame, cols, rows, dx, dy);
+
+  const depth = new Float32Array(cols * rows);
+  let maxDepthMm = 0;
+  for (let i = 0; i < depth.length; i++) {
+    let w = zbuf[i];
+    if (!isFinite(w)) {
+      depth[i] = -1;
+      continue;
+    }
+    if (w < 0) w = 0;
+    if (step > 0) w = Math.round(w / step) * step;
+    depth[i] = w;
+    if (w > maxDepthMm) maxDepthMm = w;
+  }
+
+  return { view, widthMm: frame.widthMm, heightMm: frame.heightMm, cols, rows, depth, maxDepthMm, stepMm: step };
+}
+
+/** Pure-TS projected-triangle z-buffer (reference + fallback). +Infinity = empty. */
+function rasterDepthJs(
+  mesh: Mesh,
+  frame: ReturnType<typeof viewFrame>,
+  cols: number,
+  rows: number,
+  dx: number,
+  dy: number,
+): Float32Array {
   const zbuf = new Float32Array(cols * rows).fill(Infinity);
   const p = mesh.positions;
   const va: Vec3 = [0, 0, 0];
@@ -91,21 +130,7 @@ export function depthField(mesh: Mesh, blank: Blank, view: ViewName, opts: Depth
     }
   }
 
-  const depth = new Float32Array(cols * rows);
-  let maxDepthMm = 0;
-  for (let i = 0; i < depth.length; i++) {
-    let w = zbuf[i];
-    if (!isFinite(w)) {
-      depth[i] = -1;
-      continue;
-    }
-    if (w < 0) w = 0;
-    if (step > 0) w = Math.round(w / step) * step;
-    depth[i] = w;
-    if (w > maxDepthMm) maxDepthMm = w;
-  }
-
-  return { view, widthMm: frame.widthMm, heightMm: frame.heightMm, cols, rows, depth, maxDepthMm, stepMm: step };
+  return zbuf;
 }
 
 /** Sample depth (mm) at a physical point on the face, or -1 if outside. */

@@ -62,7 +62,7 @@ Smithsonian; **uploaded files never leave your device**.
 | Drag-and-drop upload anywhere on the page | ✅ |
 | Printable guide (A4 CSS) + per-template SVG export + calibration square | ✅ |
 | Web Worker for the heavy geometry so the UI stays responsive | ✅ |
-| **Rust → WASM geometry kernel** (voxelisation + distance transform), ~10× faster, with JS fallback | ✅ |
+| **Rust → WASM geometry kernel** (voxelisation, distance transform, silhouette + depth rasters, undercut scan) — ~8× faster analysis, bit-identical, JS fallback | ✅ |
 | Vector-quality silhouettes + high-res depth maps + contours (triangle raster, independent of the voxel grid) | ✅ |
 | Smoothed 3-D carving-stage preview (Surface Nets isosurface, not voxel cubes) | ✅ |
 | Weekly CI refresh of the Smithsonian catalogue URLs | ✅ |
@@ -190,14 +190,14 @@ raw mesh
         │
         ▼
 placed mesh (blank space)
-  ├─ triangle raster ──→ silhouettes   ~0.1 mm/px + Douglas–Peucker  (6 faces)
-  │                  └─→ depth maps    ~300 px/face z-buffer, quantised 1 mm (4 faces)
-  │                         └─→ contour maps   marching squares, 2/5/10 mm
+  ├─ triangle raster (WASM) ─→ silhouettes   ~0.1 mm/px + Douglas–Peucker  (6 faces)
+  │                       └──→ depth maps    ~300 px/face z-buffer, quantised 1 mm (4 faces)
+  │                              └─→ contour maps   marching squares, 2/5/10 mm
   └─ solid voxelisation (WASM)  3-axis parity fill, majority vote, ~84 cells
          ├─ carving stages       nested envelopes, invariant-checked (see §7)
          │      └─ 3-D preview    Surface Nets isosurface (smoothed)
          ├─ carvability report    undercuts, thin features, symmetry, recesses, …
-         ├─ undercut mask         surface unreachable from any of the 6 axes
+         ├─ undercut mask (WASM)  surface unreachable from any of the 6 axes
          └─ experimental rough cuts   safe whole-slab straight cuts
 ```
 
@@ -286,9 +286,11 @@ Node 20+. `three`'s `DRACOLoader` self-bundles its decoder via Vite, so
 Draco-compressed museum GLBs work with no extra setup.
 
 **Rebuilding the WASM kernel** needs Rust + `rustup target add
-wasm32-unknown-unknown`. The built `src/geometry/wasm/kernel.wasm` (~13 kB) is
+wasm32-unknown-unknown`. The built `src/geometry/wasm/kernel.wasm` (~17 kB) is
 committed, so normal `npm install && npm run build` does **not** need Rust and CI
-never compiles it.
+never compiles it. Bump `abi_version()` (Rust) and `EXPECTED_ABI` (`kernel.ts`)
+together whenever an export signature changes — the loader refuses a mismatch and
+silently falls back to the TS path.
 
 ## 10. Testing
 
@@ -317,7 +319,9 @@ results:
   enclosed cavity;
 - Surface Nets rendering: full-grid volume closed on all six sides, one-voxel slab survives, final-model blob not shrunk;
 - **WASM-vs-TS parity** (`tests/wasm-parity`): voxelisation bit-identical,
-  distance transform within 0.05 mm, dilation masks within 0.1%;
+  distance transform within 0.05 mm, dilation masks within 0.1%, silhouette
+  mask + undercut mask bit-identical, depth z-buffer within 1e-3 mm,
+  `frameAxes` vs `viewFrame` agreement;
 - fragility / thin-feature measurement, cross-grain detection, best-orientation
   search, cross-section profiles;
 - **roughing cut-line nesting**, per-stage tool hints, hollowing suggestion;
@@ -325,7 +329,7 @@ results:
 - analysis cache keying / LRU eviction;
 - Wikimedia Commons provider: licence filtering, STL-only, error propagation.
 
-81 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+85 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 
@@ -337,13 +341,13 @@ GitHub Actions** (the workflow also self-configures via `actions/configure-pages
 
 ## 12. Future roadmap
 
-### Geometry engine → Rust / WASM  *(started)*
-Solid voxelisation and the 3-D distance transform — the two hottest operations —
-are already implemented in Rust and compiled to `wasm32-unknown-unknown` with a
-plain C ABI (no wasm-bindgen), giving ~10× on the full analysis. Still to move
-across: contour extraction, mesh intersection, silhouette rasterisation, cut
-planning and the carvability scoring — all pure functions behind
-`geometry/analysis.ts`.
+### Geometry engine → Rust / WASM  *(in progress)*
+Solid voxelisation, the 3-D distance transform, the silhouette + depth
+rasterisers and the undercut scan are implemented in Rust and compiled to
+`wasm32-unknown-unknown` with a plain C ABI (no wasm-bindgen) — ~8× on the full
+analysis, all bit-identical to the TS reference (`tests/wasm-parity`). Still to
+move across: marching-squares contour extraction, Surface Nets (viewer-side),
+QEM decimation and the carvability scoring.
 
 ### Physical carving intelligence
 Undercut *detection* exists; still to do: grain direction, fragile-feature

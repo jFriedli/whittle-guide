@@ -5,6 +5,9 @@
 //!
 //!   * `voxelize`            — 3-axis parity fill + majority vote
 //!   * `distance_transform`  — 3-D chamfer (1 / √2 / √3) distance to solid
+//!   * `raster_silhouette`   — projected-triangle coverage mask (templates)
+//!   * `raster_depth`        — projected-triangle z-buffer (depth maps / contours)
+//!   * `undercut_mask`       — surface voxels no straight axis-tool can reach
 //!
 //! Memory: linear memory is exported. `alloc(n)` bump-allocates `n` bytes and
 //! returns an offset; `reset()` rewinds the bump pointer. The JS glue writes
@@ -106,7 +109,7 @@ pub unsafe extern "C" fn reset() {
 /// Kernel ABI version — bump when the signatures below change.
 #[no_mangle]
 pub extern "C" fn abi_version() -> u32 {
-    2
+    4
 }
 
 // --- voxelisation ----------------------------------------------------------
@@ -269,6 +272,298 @@ pub unsafe extern "C" fn voxelize(
     for i in 0..total {
         *out.add(i) = if votes[i] >= threshold { 1 } else { 0 };
     }
+}
+
+// --- projected-triangle rasterisers ------------------------------------------
+//
+// Both mirror the pure-TS loops in `silhouette.ts` / `depthField.ts` exactly
+// (same f64 op order, same epsilons) so the parity tests hold. The face frame is
+// three per-axis affine maps supplied by the caller:
+//   u = pos[u_axis] * u_sign + u_off      (then / dx)
+//   v = pos[v_axis] * v_sign + v_off      (then / dy)
+//   w = pos[w_axis] * w_sign + w_off      (depth, raster_depth only)
+
+#[inline]
+unsafe fn vert(pos: *const f32, base: usize, axis: u32, sign: f64, off: f64) -> f64 {
+    *pos.add(base + axis as usize) as f64 * sign + off
+}
+
+/// Coverage mask of the projected triangles. `out` is `cols*rows` bytes, 0/1.
+#[no_mangle]
+pub unsafe extern "C" fn raster_silhouette(
+    pos: *const f32,
+    tri_count: u32,
+    cols: u32,
+    rows: u32,
+    dx: f64,
+    dy: f64,
+    u_axis: u32,
+    u_sign: f64,
+    u_off: f64,
+    v_axis: u32,
+    v_sign: f64,
+    v_off: f64,
+    out: *mut u8,
+) {
+    let cols = cols as usize;
+    let rows = rows as usize;
+    let out = core::slice::from_raw_parts_mut(out, cols * rows);
+
+    for t in 0..tri_count as usize {
+        let b = t * 9;
+        let ax = vert(pos, b, u_axis, u_sign, u_off) / dx;
+        let ay = vert(pos, b, v_axis, v_sign, v_off) / dy;
+        let bx = vert(pos, b + 3, u_axis, u_sign, u_off) / dx;
+        let by = vert(pos, b + 3, v_axis, v_sign, v_off) / dy;
+        let cx = vert(pos, b + 6, u_axis, u_sign, u_off) / dx;
+        let cy = vert(pos, b + 6, v_axis, v_sign, v_off) / dy;
+
+        let mut min_x = dfloor(ax.min(bx).min(cx)) as isize;
+        let mut max_x = dceil(ax.max(bx).max(cx)) as isize;
+        let mut min_y = dfloor(ay.min(by).min(cy)) as isize;
+        let mut max_y = dceil(ay.max(by).max(cy)) as isize;
+        if min_x < 0 {
+            min_x = 0;
+        }
+        if min_y < 0 {
+            min_y = 0;
+        }
+        if max_x > cols as isize {
+            max_x = cols as isize;
+        }
+        if max_y > rows as isize {
+            max_y = rows as isize;
+        }
+        if min_x >= max_x || min_y >= max_y {
+            continue;
+        }
+
+        let det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if dabs(det) < 1e-12 {
+            continue;
+        }
+        let inv = 1.0 / det;
+
+        for iy in min_y..max_y {
+            let sy = iy as f64 + 0.5;
+            for ix in min_x..max_x {
+                let sx = ix as f64 + 0.5;
+                let l1 = ((by - cy) * (sx - cx) + (cx - bx) * (sy - cy)) * inv;
+                let l2 = ((cy - ay) * (sx - cx) + (ax - cx) * (sy - cy)) * inv;
+                let l3 = 1.0 - l1 - l2;
+                if l1 >= -1e-7 && l2 >= -1e-7 && l3 >= -1e-7 {
+                    out[iy as usize * cols + ix as usize] = 1;
+                }
+            }
+        }
+    }
+}
+
+/// Nearest-surface depth per pixel. `out` is `cols*rows` f32; empty pixels stay
+/// `+Infinity` (caller maps to -1 and quantises), exactly like the TS z-buffer.
+#[no_mangle]
+pub unsafe extern "C" fn raster_depth(
+    pos: *const f32,
+    tri_count: u32,
+    cols: u32,
+    rows: u32,
+    dx: f64,
+    dy: f64,
+    u_axis: u32,
+    u_sign: f64,
+    u_off: f64,
+    v_axis: u32,
+    v_sign: f64,
+    v_off: f64,
+    w_axis: u32,
+    w_sign: f64,
+    w_off: f64,
+    out: *mut f32,
+) {
+    let cols = cols as usize;
+    let rows = rows as usize;
+    let zbuf = core::slice::from_raw_parts_mut(out, cols * rows);
+    for z in zbuf.iter_mut() {
+        *z = f32::INFINITY;
+    }
+
+    for t in 0..tri_count as usize {
+        let b = t * 9;
+        let ax = vert(pos, b, u_axis, u_sign, u_off) / dx;
+        let ay = vert(pos, b, v_axis, v_sign, v_off) / dy;
+        let aw = vert(pos, b, w_axis, w_sign, w_off);
+        let bx = vert(pos, b + 3, u_axis, u_sign, u_off) / dx;
+        let by = vert(pos, b + 3, v_axis, v_sign, v_off) / dy;
+        let bw = vert(pos, b + 3, w_axis, w_sign, w_off);
+        let cx = vert(pos, b + 6, u_axis, u_sign, u_off) / dx;
+        let cy = vert(pos, b + 6, v_axis, v_sign, v_off) / dy;
+        let cw = vert(pos, b + 6, w_axis, w_sign, w_off);
+
+        let mut min_x = dfloor(ax.min(bx).min(cx)) as isize;
+        let mut max_x = dceil(ax.max(bx).max(cx)) as isize;
+        let mut min_y = dfloor(ay.min(by).min(cy)) as isize;
+        let mut max_y = dceil(ay.max(by).max(cy)) as isize;
+        if min_x < 0 {
+            min_x = 0;
+        }
+        if min_y < 0 {
+            min_y = 0;
+        }
+        if max_x > cols as isize {
+            max_x = cols as isize;
+        }
+        if max_y > rows as isize {
+            max_y = rows as isize;
+        }
+        if min_x >= max_x || min_y >= max_y {
+            continue;
+        }
+
+        let det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+        if dabs(det) < 1e-12 {
+            continue;
+        }
+        let inv = 1.0 / det;
+
+        for iy in min_y..max_y {
+            let sy = iy as f64 + 0.5;
+            for ix in min_x..max_x {
+                let sx = ix as f64 + 0.5;
+                let l1 = ((by - cy) * (sx - cx) + (cx - bx) * (sy - cy)) * inv;
+                let l2 = ((cy - ay) * (sx - cx) + (ax - cx) * (sy - cy)) * inv;
+                let l3 = 1.0 - l1 - l2;
+                if l1 < -1e-7 || l2 < -1e-7 || l3 < -1e-7 {
+                    continue;
+                }
+                // Match the TS path exactly: compare in f64 against the
+                // f32-rounded z-buffer value, then store rounded to f32.
+                let w = l1 * aw + l2 * bw + l3 * cw;
+                let idx = iy as usize * cols + ix as usize;
+                if w < zbuf[idx] as f64 {
+                    zbuf[idx] = w as f32;
+                }
+            }
+        }
+    }
+}
+
+// --- undercut mask -----------------------------------------------------------
+
+/// Mark solid surface voxels that no straight tool from any of the 6 axes can
+/// reach (they sit behind an overhang). `out` is `nx*ny*nz` bytes: 1 = undercut.
+/// `counts` receives `[surface_voxels, undercut_voxels]` as two u32.
+#[no_mangle]
+pub unsafe extern "C" fn undercut_mask(
+    data: *const u8,
+    nx: u32,
+    ny: u32,
+    nz: u32,
+    out: *mut u8,
+    counts: *mut u32,
+) {
+    let (nx, ny, nz) = (nx as usize, ny as usize, nz as usize);
+    let total = nx * ny * nz;
+    let data = core::slice::from_raw_parts(data, total);
+    let out = core::slice::from_raw_parts_mut(out, total);
+    for o in out.iter_mut() {
+        *o = 0;
+    }
+    let idx = |i: usize, j: usize, k: usize| i + nx * (j + ny * k);
+
+    let mut accessible: Vec<u8> = vec![0u8; total];
+
+    // First solid voxel scanning inward from each of the 6 faces.
+    for j in 0..ny {
+        for i in 0..nx {
+            let mut k = nz;
+            while k > 0 {
+                k -= 1;
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+            for k in 0..nz {
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+        }
+    }
+    for k in 0..nz {
+        for j in 0..ny {
+            let mut i = nx;
+            while i > 0 {
+                i -= 1;
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+            for i in 0..nx {
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+        }
+    }
+    for k in 0..nz {
+        for i in 0..nx {
+            let mut j = ny;
+            while j > 0 {
+                j -= 1;
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+            for j in 0..ny {
+                if data[idx(i, j, k)] != 0 {
+                    accessible[idx(i, j, k)] = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    let at = |i: isize, j: isize, k: isize| -> u8 {
+        if i < 0 || j < 0 || k < 0 || i >= nx as isize || j >= ny as isize || k >= nz as isize {
+            0
+        } else {
+            data[idx(i as usize, j as usize, k as usize)]
+        }
+    };
+
+    let mut surface: u32 = 0;
+    let mut undercut: u32 = 0;
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                if data[idx(i, j, k)] == 0 {
+                    continue;
+                }
+                let (ii, jj, kk) = (i as isize, j as isize, k as isize);
+                let is_surface = at(ii + 1, jj, kk) == 0
+                    || at(ii - 1, jj, kk) == 0
+                    || at(ii, jj + 1, kk) == 0
+                    || at(ii, jj - 1, kk) == 0
+                    || at(ii, jj, kk + 1) == 0
+                    || at(ii, jj, kk - 1) == 0;
+                if !is_surface {
+                    continue;
+                }
+                surface += 1;
+                if accessible[idx(i, j, k)] == 0 {
+                    out[idx(i, j, k)] = 1;
+                    undercut += 1;
+                }
+            }
+        }
+    }
+    *counts.add(0) = surface;
+    *counts.add(1) = undercut;
 }
 
 // --- distance transform --------------------------------------------------------

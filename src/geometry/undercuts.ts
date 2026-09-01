@@ -9,6 +9,7 @@
  */
 
 import { VoxelGrid } from './voxelize';
+import { getKernel } from './wasm';
 
 export interface UndercutResult {
   /** Grid-sized, 1 where a solid surface voxel is unreachable from every axis. */
@@ -20,6 +21,22 @@ export interface UndercutResult {
 
 export function undercutMask(g: VoxelGrid): UndercutResult {
   const { nx, ny, nz, data } = g;
+
+  const kernel = getKernel();
+  if (kernel) {
+    try {
+      const r = kernel.undercutMask(data, { nx, ny, nz });
+      return {
+        mask: r.mask,
+        surfaceVoxels: r.surfaceVoxels,
+        undercutVoxels: r.undercutVoxels,
+        fraction: r.surfaceVoxels === 0 ? 0 : r.undercutVoxels / r.surfaceVoxels,
+      };
+    } catch {
+      /* fall through to JS */
+    }
+  }
+
   const at = (i: number, j: number, k: number) =>
     i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[i + nx * (j + ny * k)];
   const idx = (i: number, j: number, k: number) => i + nx * (j + ny * k);
