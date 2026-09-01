@@ -57,6 +57,8 @@ export class Workspace {
   private oriented: { positions: Float32Array; bounds: Box3 } | null = null;
   private grainAxis: 0 | 1 | 2 = 1;
   private stageCount = 9;
+  /** When set, analysis geometry is mirrored across this axis's mid-plane. */
+  private symmetryAxis: 0 | 1 | 2 | null = null;
   private tab: PanelTab = 'silhouette';
   private stageIndex = 4;
   private contourInterval = 5;
@@ -109,9 +111,10 @@ export class Workspace {
         this.button('Best for carving', () => void this.findBestOrientation()),
       ]),
       el('div', { class: 'btnrow' }, [
-        this.button('Centre & reset', () => { this.baseRot = identity(); this.rotation = [0, 0, 0]; this.userScale = 1; this.rebuildOriented(); this.applyPlacement(); this.recompute(); }),
+        this.button('Centre & reset', () => { this.baseRot = identity(); this.rotation = [0, 0, 0]; this.userScale = 1; this.symmetryAxis = null; this.rebuildOriented(); this.applyPlacement(); this.recompute(); }),
         this.button('Reset camera', () => this.viewer.resetCamera()),
       ]),
+      this.symmetryRow(),
     ]);
 
     const modeCard = el('div', { class: 'ctrlcard' }, [
@@ -183,6 +186,7 @@ export class Workspace {
       return;
     }
     this.baseRot = identity();
+    this.symmetryAxis = null;
     this.rebuildOriented();
     this.applyPlacement();
     this.recompute(true);
@@ -280,6 +284,26 @@ export class Workspace {
       seg.append(b);
     });
     return el('div', { class: 'inline' }, [el('span', { class: 'lbl', title: 'Which blank axis the wood grain runs along' }, ['Grain along']), seg]);
+  }
+
+  private symmetryRow(): HTMLElement {
+    const seg = el('div', { class: 'segmented segmented--sm' });
+    const opts: [string, 0 | 1 | 2 | null][] = [['Off', null], ['L–R', 0], ['F–B', 2]];
+    opts.forEach(([label, axis]) => {
+      const b = el('button', { class: `seg ${this.symmetryAxis === axis ? 'seg--on' : ''}` }, [label]);
+      b.addEventListener('click', () => {
+        this.symmetryAxis = axis;
+        seg.querySelectorAll('.seg').forEach((x) => x.classList.remove('seg--on'));
+        b.classList.add('seg--on');
+        this.recompute(true);
+        if (axis !== null) toast('Analysis geometry mirrored — templates and stages are now symmetric. The raw 3-D model view is unchanged.', 'info');
+      });
+      seg.append(b);
+    });
+    return el('div', { class: 'inline' }, [
+      el('span', { class: 'lbl', title: 'Mirror the scan across its mid-plane so templates and stages come out symmetric' }, ['Symmetry']),
+      seg,
+    ]);
   }
 
   private modeRow(): HTMLElement {
@@ -389,6 +413,7 @@ export class Workspace {
           depthQuantiseMm: 1,
           grainAxis: this.grainAxis,
           stageCount: this.stageCount,
+          symmetryAxis: this.symmetryAxis ?? undefined,
         });
         this.analysis = result;
         this.stageIndex = Math.min(this.stageIndex, result.stages.length - 1);

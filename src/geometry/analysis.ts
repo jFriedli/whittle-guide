@@ -24,6 +24,7 @@ import { analyseCarvability, CarvabilityReport } from './carvability';
 import { suggestRoughCuts, RoughCut } from './roughCuts';
 import { undercutMask } from './undercuts';
 import { analyseFragility, GrainAxis } from './fragility';
+import { symmetrizeGrid, mirrorMesh } from './symmetry';
 import { getKernel } from './wasm';
 
 export interface ProjectionResult {
@@ -115,6 +116,8 @@ export interface AnalysisOptions {
   grainAxis?: GrainAxis;
   /** How many carving stages to build (4–9). Default 9. */
   stageCount?: number;
+  /** Mirror the voxelised model across this blank axis's mid-plane (0=X,1=Y,2=Z). */
+  symmetryAxis?: GrainAxis;
 }
 
 /** Suggest hand tools for a stage from its role and the model's difficulty. */
@@ -164,13 +167,19 @@ function pickOutlineStages(stages: CarvingStage[]): CarvingStage[] {
 export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}): AnalysisResult {
   const approxCells = opts.approxCells ?? 64;
   const grid: VoxelGrid = voxelize(placed, blank, { approxCells, axes: opts.voxelAxes ?? 3 });
+  // Enforced symmetry: mirror the voxel grid (parity-safe) and, for the crisp
+  // raster outputs, a mirrored copy of the mesh.
+  const rasterMesh = opts.symmetryAxis !== undefined ? mirrorMesh(placed, opts.symmetryAxis) : placed;
+  if (opts.symmetryAxis !== undefined) {
+    grid.data = symmetrizeGrid(grid, opts.symmetryAxis);
+  }
 
   const projections: ProjectionResult[] = ALL_VIEWS.map((view) => {
     const p = project(grid, view);
     // Outline comes from a high-res projected-triangle raster, independent of the
     // voxel grid, so printed templates stay crisp. The voxel mask is retained for
     // quick coverage/extent checks elsewhere.
-    const sil = silhouette(placed, blank, view, { resolution: opts.silhouetteResolution ?? 420 });
+    const sil = silhouette(rasterMesh, blank, view, { resolution: opts.silhouetteResolution ?? 420 });
     return {
       view,
       widthMm: p.widthMm,
@@ -189,7 +198,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
   for (const view of FACE_DEPTH_VIEWS) {
     depthByView.set(
       view,
-      depthField(placed, blank, view, {
+      depthField(rasterMesh, blank, view, {
         resolution: opts.depthResolution ?? 300,
         quantiseMm: depthQuantiseMm,
       }),
@@ -252,7 +261,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
   const uc = undercutMask(grid);
   const frag = analyseFragility(grid, grainAxis);
   const carvability = analyseCarvability(grid, {
-    mesh: placed,
+    mesh: rasterMesh,
     undercutFraction: uc.fraction,
     fragility: frag,
   });
