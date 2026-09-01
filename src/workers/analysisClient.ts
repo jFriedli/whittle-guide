@@ -11,6 +11,7 @@ import type { WorkerRequest, WorkerResponse } from './analysis.worker';
 import { analyse } from '../geometry/analysis';
 import { normalizeMesh } from '../geometry/normalize';
 import { findBestOrientation, type BestOrientationResult } from '../geometry/bestOrientation';
+import { AnalysisCache, analysisKey } from './analysisCache';
 
 export interface PreparedMesh {
   positions: Float32Array;
@@ -26,6 +27,7 @@ export class AnalysisClient {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private latestAnalyse = 0;
+  private cache = new AnalysisCache();
 
   constructor() {
     try {
@@ -90,13 +92,27 @@ export class AnalysisClient {
   async run(positions: Float32Array, blank: Blank, options?: AnalysisOptions): Promise<AnalysisResult> {
     const id = this.nextId++;
     this.latestAnalyse = id;
+
+    const key = analysisKey(positions, blank, options);
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+
     if (!this.worker) {
-      return analyse({ positions }, blank, options);
+      const result = analyse({ positions }, blank, options);
+      this.cache.set(key, result);
+      return result;
     }
     const copy = positions.slice();
     const req: AnalyseRequestLike = { id, kind: 'analyse', positions: copy.buffer, blank, options };
     return new Promise<AnalysisResult>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, kind: 'analyse' });
+      this.pending.set(id, {
+        resolve: ((v: unknown) => {
+          this.cache.set(key, v as AnalysisResult);
+          resolve(v as AnalysisResult);
+        }) as (v: unknown) => void,
+        reject,
+        kind: 'analyse',
+      });
       this.worker!.postMessage(req as WorkerRequest, [copy.buffer]);
     });
   }
