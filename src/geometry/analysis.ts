@@ -14,8 +14,8 @@
 
 import { Mesh, triangleCount } from './mesh';
 import { Blank } from './blank';
-import { voxelize, VoxelGrid, solidVolume } from './voxelize';
-import { project, ALL_VIEWS, ViewName } from './projection';
+import { voxelize, VoxelGrid, solidVolume, makeGridLike } from './voxelize';
+import { project, outlinePolylines, ALL_VIEWS, ViewName } from './projection';
 import { silhouette } from './silhouette';
 import { depthField, DepthField, FACE_DEPTH_VIEWS } from './depthField';
 import { contourMap, CONTOUR_INTERVALS } from './contours';
@@ -44,6 +44,14 @@ export interface ContourResult {
   widthMm: number;
   heightMm: number;
   levels: { depthMm: number; polylines: number[][][] }[];
+}
+
+/** Projected outlines of key carving stages, for overlaying on a template. */
+export interface StageOutlineResult {
+  view: ViewName;
+  widthMm: number;
+  heightMm: number;
+  stages: { index: number; name: string; marginMm: number; polylines: number[][][] }[];
 }
 
 export interface StageResult {
@@ -76,6 +84,8 @@ export interface AnalysisResult {
     stepMm: number;
   }[];
   contours: ContourResult[];
+  /** Nested stage outlines per template view (block → coarse → medium → final). */
+  stageOutlines: StageOutlineResult[];
   stages: StageResult[];
   stageInvariant: { ok: boolean; violations: string[] };
   carvability: CarvabilityReport;
@@ -103,6 +113,19 @@ export interface AnalysisOptions {
   grainAxis?: GrainAxis;
   /** How many carving stages to build (4–9). Default 9. */
   stageCount?: number;
+}
+
+/** Pick up to four representative stages (excluding the raw blank) for cut-lines. */
+function pickOutlineStages(stages: CarvingStage[]): CarvingStage[] {
+  const body = stages.slice(1);
+  if (body.length <= 4) return body;
+  const picks = [
+    body[0],
+    body[Math.floor(body.length / 3)],
+    body[Math.floor((2 * body.length) / 3)],
+    body[body.length - 1],
+  ];
+  return picks.filter((s, i) => picks.indexOf(s) === i);
 }
 
 export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}): AnalysisResult {
@@ -174,6 +197,25 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
   const stages: CarvingStage[] = buildCarvingStages(grid, { stageCount: opts.stageCount });
   const stageInvariant = verifyStageInvariant(stages);
 
+  // Roughing cut-lines: project a few key stages onto each face so the printed
+  // template can show nested "cut to here" outlines (block → coarse → near → final).
+  const outlineStages = pickOutlineStages(stages);
+  const STAGE_OUTLINE_VIEWS: ViewName[] = ['front', 'back', 'left', 'right', 'top'];
+  const stageOutlines: StageOutlineResult[] = STAGE_OUTLINE_VIEWS.map((view) => {
+    const base = project(grid, view);
+    return {
+      view,
+      widthMm: base.widthMm,
+      heightMm: base.heightMm,
+      stages: outlineStages.map((s) => ({
+        index: s.index,
+        name: s.name,
+        marginMm: s.marginMm,
+        polylines: outlinePolylines(project(makeGridLike(grid, s.data), view)),
+      })),
+    };
+  });
+
   const uc = undercutMask(grid);
   const frag = analyseFragility(grid, grainAxis);
   const carvability = analyseCarvability(grid, {
@@ -194,6 +236,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     projections,
     depthMaps,
     contours,
+    stageOutlines,
     stages: stages.map((s) => ({
       index: s.index,
       name: s.name,

@@ -44,6 +44,19 @@ const figs = await page.$$eval('.tplgrid .tplfig', (e) => e.length);
 console.log('silhouette figures:', figs);
 await page.screenshot({ path: 'scratch/shot-workspace.png' });
 
+// roughing cut-lines toggle on the silhouette templates
+const strokeCountBefore = await page.$$eval('.tplgrid .svgwrap path', (e) => e.length);
+await page.click('.panel .switch input');
+await page.waitForFunction(
+  (n) => document.querySelectorAll('.tplgrid .svgwrap path').length > n,
+  strokeCountBefore,
+  { timeout: 10000 },
+);
+const strokeCountAfter = await page.$$eval('.tplgrid .svgwrap path', (e) => e.length);
+console.log('template paths before/after roughing toggle:', strokeCountBefore, strokeCountAfter);
+await page.screenshot({ path: 'scratch/shot-roughing-lines.png' });
+await page.click('.panel .switch input'); // toggle back off
+
 // depth tab
 await page.click('.tab:has-text("Depth")');
 await page.waitForSelector('.depthimg', { timeout: 20000 });

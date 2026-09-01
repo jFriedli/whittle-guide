@@ -43,11 +43,18 @@ function svgEl(svg: string): HTMLElement {
   return wrap;
 }
 
-function templateFigure(ctx: PanelContext, view: ViewName, withContours = false): HTMLElement {
+function templateFigure(ctx: PanelContext, view: ViewName, withContours = false, withRoughing = false): HTMLElement {
   const a = ctx.analysis;
   const proj = a.projections.find((p) => p.view === view)!;
   const contours = withContours
     ? a.contours.find((c) => c.view === view && c.intervalMm === ctx.contourInterval)?.levels
+    : undefined;
+  const stageLines = withRoughing
+    ? a.stageOutlines.find((s) => s.view === view)?.stages.map((s) => ({
+        name: s.name,
+        marginMm: s.marginMm,
+        polylines: s.polylines,
+      }))
     : undefined;
   const svg = buildTemplateSvg({
     view,
@@ -55,8 +62,9 @@ function templateFigure(ctx: PanelContext, view: ViewName, withContours = false)
     heightMm: proj.heightMm,
     outline: proj.outline,
     contours,
+    stageLines,
     title: '',
-    subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm${withContours ? ` · ${ctx.contourInterval} mm contours` : ''}`,
+    subtitle: `${proj.widthMm.toFixed(0)} × ${proj.heightMm.toFixed(0)} mm${withContours ? ` · ${ctx.contourInterval} mm contours` : ''}${withRoughing ? ' · roughing lines' : ''}`,
   });
   const fig = el('figure', { class: 'tplfig' }, [
     svgEl(svg),
@@ -65,7 +73,7 @@ function templateFigure(ctx: PanelContext, view: ViewName, withContours = false)
       (() => {
         const dl = el('button', { class: 'linkbtn' }, ['SVG']);
         dl.addEventListener('click', () =>
-          download(`whittleguide-${view}${withContours ? '-contours' : ''}.svg`, new Blob([svg], { type: 'image/svg+xml' })),
+          download(`whittleguide-${view}${withContours ? '-contours' : ''}${withRoughing ? '-roughing' : ''}.svg`, new Blob([svg], { type: 'image/svg+xml' })),
         );
         return dl;
       })(),
@@ -91,17 +99,39 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
     root.append(el('p', { class: 'panel__lead' }, [
       'True orthographic outlines of the positioned model — trace these straight onto the matching face of the wood. Every template prints 1:1.',
     ]));
+
+    let roughing = false;
     const grid = el('div', { class: 'tplgrid' });
-    for (const v of ['front', 'back', 'left', 'right', 'top', 'bottom'] as ViewName[]) {
-      grid.append(templateFigure(ctx, v));
-    }
+    const views = ['front', 'back', 'left', 'right', 'top', 'bottom'] as ViewName[];
+    const roughingViews = new Set(a.stageOutlines.map((s) => s.view));
+    const fillGrid = () => {
+      grid.replaceChildren(...views.map((v) => templateFigure(ctx, v, false, roughing && roughingViews.has(v))));
+    };
+
+    const toggle = el('label', { class: 'switch' }, [
+      (() => {
+        const c = el('input', { type: 'checkbox' }) as HTMLInputElement;
+        c.addEventListener('change', () => {
+          roughing = c.checked;
+          fillGrid();
+        });
+        return c;
+      })(),
+      el('span', {}, ['Show roughing cut-lines (block → coarse → near → final)']),
+    ]);
+    root.append(toggle);
+
+    fillGrid();
     root.append(grid);
     const all = el('button', { class: 'btn' }, ['Download all 6 as SVG']);
     all.addEventListener('click', () => {
-      for (const v of ['front', 'back', 'left', 'right', 'top', 'bottom'] as ViewName[]) {
+      for (const v of views) {
         const p = a.projections.find((x) => x.view === v)!;
-        const svg = buildTemplateSvg({ view: v, widthMm: p.widthMm, heightMm: p.heightMm, outline: p.outline, title: `${ctx.title} — ${v.toUpperCase()}` });
-        download(`whittleguide-${v}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
+        const stageLines = roughing
+          ? a.stageOutlines.find((s) => s.view === v)?.stages.map((s) => ({ name: s.name, marginMm: s.marginMm, polylines: s.polylines }))
+          : undefined;
+        const svg = buildTemplateSvg({ view: v, widthMm: p.widthMm, heightMm: p.heightMm, outline: p.outline, stageLines, title: `${ctx.title} — ${v.toUpperCase()}` });
+        download(`whittleguide-${v}${roughing ? '-roughing' : ''}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
       }
     });
     root.append(all);

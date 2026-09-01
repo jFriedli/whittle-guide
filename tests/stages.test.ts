@@ -73,6 +73,42 @@ describe('full analysis pipeline', () => {
     expect(res.solidVolumeCm3).toBeGreaterThan(0);
     expect(res.solidVolumeCm3).toBeLessThan(res.blankVolumeCm3);
   });
+
+  it('roughing cut-lines nest: each stage outline sits inside the previous one', () => {
+    const n = normalizeMesh(makePawn(), { targetSize: 100 });
+    const blank = defaultBlank();
+    const fit = autoFit(n.bounds, blank, [0, 0, 0], 4);
+    const placed = applyMatrix4(n.mesh, placementMatrix(fit.placement, n.bounds));
+    const res = analyse(placed, blank, { approxCells: 40 });
+
+    expect(res.stageOutlines.map((s) => s.view)).toEqual(['front', 'back', 'left', 'right', 'top']);
+    for (const so of res.stageOutlines) {
+      expect(so.stages.length).toBeGreaterThanOrEqual(2);
+      // margins strictly decrease towards the final (0) line
+      for (let i = 1; i < so.stages.length; i++) {
+        expect(so.stages[i].marginMm).toBeLessThanOrEqual(so.stages[i - 1].marginMm);
+      }
+      expect(so.stages[so.stages.length - 1].marginMm).toBe(0);
+      // bounding box of each successive outline is contained in the previous one
+      const bbox = (pls: number[][][]) => {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const l of pls) for (const [x, y] of l) {
+          x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+          x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        }
+        return [x0, y0, x1, y1];
+      };
+      for (let i = 1; i < so.stages.length; i++) {
+        const outer = bbox(so.stages[i - 1].polylines);
+        const inner = bbox(so.stages[i].polylines);
+        const tol = 1.5; // mm — voxel/marching-squares slop
+        expect(inner[0]).toBeGreaterThanOrEqual(outer[0] - tol);
+        expect(inner[1]).toBeGreaterThanOrEqual(outer[1] - tol);
+        expect(inner[2]).toBeLessThanOrEqual(outer[2] + tol);
+        expect(inner[3]).toBeLessThanOrEqual(outer[3] + tol);
+      }
+    }
+  });
 });
 
 describe('disconnected parts detection', () => {

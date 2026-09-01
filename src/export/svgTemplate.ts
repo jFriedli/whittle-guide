@@ -16,6 +16,8 @@ export interface TemplateInput {
   outline: number[][][];
   /** Optional contour polylines grouped by depth. */
   contours?: { depthMm: number; polylines: number[][][] }[];
+  /** Optional roughing cut-lines: nested stage outlines, outermost first. */
+  stageLines?: { name: string; marginMm: number; polylines: number[][][] }[];
   title: string;
   subtitle?: string;
 }
@@ -57,6 +59,23 @@ export function buildTemplateSvg(input: TemplateInput): string {
     ticks.push(`<line x1="${w}" y1="${flipY - y}" x2="${w + (y % 50 === 0 ? 4 : 2.5)}" y2="${flipY - y}" />`);
   }
 
+  const stageLines = input.stageLines ?? [];
+  const stageLinePaths = stageLines
+    .map((s, i) => {
+      const d = pathFrom(s.polylines, flipY);
+      if (!d) return '';
+      const dash = s.marginMm <= 0 ? '' : ` stroke-dasharray="${(3.5 - i * 0.7).toFixed(1)} ${(2.2 - i * 0.4).toFixed(1)}"`;
+      const stroke = s.marginMm <= 0 ? '#8a3b12' : '#b5651d';
+      const sw = s.marginMm <= 0 ? 0.5 : 0.4;
+      const p0 = s.polylines.find((l) => l.length)?.[0];
+      const label = s.marginMm <= 0 ? 'final' : `+${s.marginMm.toFixed(s.marginMm < 10 ? 1 : 0)}`;
+      // Stack labels down the left edge so nested lines don't pile their tags on one point.
+      const ly = 3 + i * 4;
+      return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}"${dash} stroke-linejoin="round" opacity="0.9"/>` +
+        (p0 ? `<text x="1" y="${ly.toFixed(1)}" font-size="2.4" fill="${stroke}">${label}</text>` : '');
+    })
+    .join('\n');
+
   const contourPaths = (input.contours ?? [])
     .map((c) => {
       const opacity = 0.25 + Math.min(0.6, c.depthMm / 40);
@@ -74,6 +93,7 @@ export function buildTemplateSvg(input: TemplateInput): string {
     <line x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}" stroke="#c07a3a" stroke-width="0.3" stroke-dasharray="2 1.5"/>
     <line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}" stroke="#c07a3a" stroke-width="0.3" stroke-dasharray="2 1.5"/>
     <path d="${pathFrom(input.outline, flipY)}" fill="#e7d8bf" fill-opacity="0.55" stroke="#3c2f1e" stroke-width="0.6" stroke-linejoin="round"/>
+    ${stageLinePaths}
     ${contourPaths}
     ${(() => {
       const avail = w + MARGIN - 1;
