@@ -225,7 +225,7 @@ export class Viewer {
       return;
     }
     this.stageMesh = new THREE.Mesh(
-      buildSurfaceNetsGeometry(grid.data, dims, { blurPasses: 1, smoothIterations: 2 }),
+      buildSurfaceNetsGeometry(grid.data, dims, { blurPasses: 0, smoothIterations: 3, isoLevel: 0.42 }),
       new THREE.MeshStandardMaterial({
         color: WOOD, roughness: 0.85, flatShading: false,
         emissive: 0x2a1c0d, emissiveIntensity: 0.4,
@@ -234,7 +234,7 @@ export class Viewer {
     this.scene.add(this.stageMesh);
     if (grid.removed) {
       this.removeMesh = new THREE.Mesh(
-        buildSurfaceNetsGeometry(grid.removed, dims, { blurPasses: 0, smoothIterations: 1 }),
+        buildSurfaceNetsGeometry(grid.removed, dims, { blurPasses: 0, smoothIterations: 2 }),
         new THREE.MeshStandardMaterial({
           color: 0xd6584a, transparent: true, opacity: 0.3, roughness: 0.9,
           side: THREE.FrontSide, depthWrite: false, flatShading: false,
