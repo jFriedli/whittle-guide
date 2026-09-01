@@ -38,17 +38,25 @@ Smithsonian; **uploaded files never leave your device**.
 | Area | Status |
 | --- | --- |
 | Smithsonian 3D museum browser (live search + 16 curated CC0 objects) | ✅ |
-| Upload (or drag-drop) `.glb` / `.gltf` (incl. Draco) / `.obj` / `.stl` / `.ply` | ✅ |
+| **Wikimedia Commons provider** — keyless live search of Commons 3D (STL) scans, licence-filtered | ✅ |
+| Upload (or drag-drop) `.glb` / `.gltf` (incl. Draco) / `.obj` / `.stl` / `.ply` / `.fbx` / `.3mf` | ✅ |
 | Interactive 3D workspace: orbit/pan/zoom, translucent blank, labelled axes | ✅ |
 | Editable blank dimensions (mm / cm), auto-fit with margin, orientation, scale | ✅ |
-| Visualisation modes: model, blank+model, current stage, material-to-remove, **undercuts**, wireframe, section | ✅ |
+| Visualisation modes: model, blank+model, current stage, material-to-remove, **undercuts**, **fragile features**, wireframe, section | ✅ |
 | 6 orthographic silhouette templates with real dimensions, centre lines, tick marks | ✅ |
 | Depth maps (front/back/left/right) with hover read-out and legend | ✅ |
 | Contour maps at 2 / 5 / 10 mm | ✅ |
-| 9 progressive carving stages with geometry-derived instructions | ✅ |
+| Adaptive 4 / 6 / 9 progressive carving stages with geometry-derived instructions | ✅ |
+| **Tool-aware stage hints** (saw / hatchet / gouge / knife / V-tool / hook knife, per stage & model) | ✅ |
+| **Roughing cut-lines on the silhouette templates** (block → coarse → near → final offset lines) | ✅ |
 | Stage timeline + material-removed visualisation | ✅ |
-| Carvability analysis + unsuitable-model warnings | ✅ |
+| Carvability analysis + unsuitable-model warnings + **hollowing suggestion** for thick blanks | ✅ |
 | **Undercut detection** — highlights surface a straight knife can't reach | ✅ |
+| **Fragility / thin-feature map** + **grain direction** + cross-grain warning | ✅ |
+| **Symmetry enforcement** — mirror a warped scan across its mid-plane | ✅ |
+| **Cross-section (Sections) panel** — horizontal profiles up the height | ✅ |
+| **"Best for carving" orientation search** over 24 axis-aligned poses | ✅ |
+| Analysis-result LRU cache (geometry + blank + options keyed) | ✅ |
 | **PCA auto-orientation** (+ "Auto-orient" button) so any pose comes in usable | ✅ |
 | **Quadric (QEM) mesh decimation** for arbitrary dense uploads | ✅ |
 | Drag-and-drop upload anywhere on the page | ✅ |
@@ -74,6 +82,7 @@ src/
     library.ts            aggregates providers, merges curated + live
     providers/
       smithsonian.ts       Smithsonian 3D API + curated catalogue
+      wikimedia.ts         Wikimedia Commons 3D (STL) live search, licence-filtered
       europeana.ts         optional, config-gated
     catalogue.generated.json   committed CC0 catalogue (see scripts/build-catalogue.mjs)
   viewer/         three.js scene, model loaders, Surface Nets isosurface, demo models
@@ -144,6 +153,20 @@ final manual fallback.
     from a static site.
 - The deployed site therefore **always shows real museum objects**, even if the
   API is unreachable — the curated CC0 catalogue is bundled.
+
+### Wikimedia Commons (secondary, always on)
+
+- **API:** `GET https://commons.wikimedia.org/w/api.php` with
+  `generator=search&gsrsearch=<term> filetype:3d&gsrnamespace=6` and
+  `prop=imageinfo`. No key; `origin=*` makes it CORS-open, and the STL bytes on
+  `upload.wikimedia.org` are served with `Access-Control-Allow-Origin: *`.
+- Commons hosts 3D models only as **STL**, which the existing loader already
+  handles. Everything on Commons is under a free licence by policy; the provider
+  additionally keeps only files whose structured `LicenseShortName` matches
+  CC0 / CC BY[-SA] / public domain, shows that licence on the card with a
+  *"verify"* hint, and carries the uploader for attribution plus a link to the
+  file page.
+- Live results only — no curated offline set.
 
 ### Europeana (optional)
 
@@ -294,9 +317,15 @@ results:
   enclosed cavity;
 - Surface Nets rendering: full-grid volume closed on all six sides, one-voxel slab survives, final-model blob not shrunk;
 - **WASM-vs-TS parity** (`tests/wasm-parity`): voxelisation bit-identical,
-  distance transform within 0.05 mm, dilation masks within 0.1%.
+  distance transform within 0.05 mm, dilation masks within 0.1%;
+- fragility / thin-feature measurement, cross-grain detection, best-orientation
+  search, cross-section profiles;
+- **roughing cut-line nesting**, per-stage tool hints, hollowing suggestion;
+- **symmetry enforcement** (parity-safe grid union, mirrored-mesh raster);
+- analysis cache keying / LRU eviction;
+- Wikimedia Commons provider: licence filtering, STL-only, error propagation.
 
-57 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+81 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 
