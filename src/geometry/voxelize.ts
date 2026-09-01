@@ -39,12 +39,22 @@ export function gridForBlank(blank: Blank, approxCells: number): { nx: number; n
   const nx = Math.max(2, Math.round(blank.width / cell));
   const ny = Math.max(2, Math.round(blank.height / cell));
   const nz = Math.max(2, Math.round(blank.depth / cell));
+  const d: Vec3 = [blank.width / nx, blank.height / ny, blank.depth / nz];
+  // Sub-voxel, per-axis irrational jitter of the grid origin. Keeps the sample
+  // points off exact triangle vertices/edges (a perfectly axis-aligned CAD
+  // cylinder would otherwise leave its centre column unfilled), without any
+  // visible effect on the result.
+  const J: Vec3 = [0.000713, 0.000531, 0.000374];
   return {
     nx,
     ny,
     nz,
-    d: [blank.width / nx, blank.height / ny, blank.depth / nz],
-    origin: [-blank.width / 2, -blank.height / 2, -blank.depth / 2],
+    d,
+    origin: [
+      -blank.width / 2 + d[0] * J[0],
+      -blank.height / 2 + d[1] * J[1],
+      -blank.depth / 2 + d[2] * J[2],
+    ],
   };
 }
 

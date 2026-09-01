@@ -10,7 +10,7 @@ import { Mat4 } from '../geometry/mesh';
 import { VoxelDims } from './voxelMesh';
 import { buildSurfaceNetsGeometry } from './surfaceNets';
 
-export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section' | 'undercuts';
+export type ViewMode = 'model' | 'blankModel' | 'stage' | 'remove' | 'wireframe' | 'section' | 'undercuts' | 'fragile';
 
 export interface StageGrid {
   data: Uint8Array;
@@ -34,9 +34,12 @@ export class Viewer {
   private stageMesh: THREE.Mesh | null = null;
   private removeMesh: THREE.Mesh | null = null;
   private undercutMesh: THREE.Mesh | null = null;
+  private fragileMesh: THREE.Mesh | null = null;
+  private grainLines: THREE.LineSegments | null = null;
   private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
 
   private blank: Blank = { width: 40, height: 100, depth: 40 };
+  private grainAxis: 0 | 1 | 2 = 1;
   private mode: ViewMode = 'blankModel';
   private raf = 0;
   private ro: ResizeObserver;
@@ -156,6 +159,7 @@ export class Viewer {
     this.centerLines.geometry = g;
     this.centerLines.computeLineDistances();
     this.clipPlane.constant = 0;
+    this.setGrainAxis(this.grainAxis);
   }
 
   setMode(mode: ViewMode) {
@@ -165,7 +169,8 @@ export class Viewer {
 
   private applyMode() {
     const m = this.mode;
-    const showModel = m === 'model' || m === 'blankModel' || m === 'wireframe' || m === 'section' || m === 'remove' || m === 'undercuts';
+    const overlay = m === 'undercuts' || m === 'fragile';
+    const showModel = m === 'model' || m === 'blankModel' || m === 'wireframe' || m === 'section' || m === 'remove' || overlay;
     const showBlank = m === 'blankModel' || m === 'section';
     if (this.modelObject) {
       this.modelObject.visible = showModel;
@@ -177,8 +182,8 @@ export class Viewer {
         for (const x of list) {
           x.wireframe = m === 'wireframe';
           x.clippingPlanes = m === 'section' ? [this.clipPlane] : [];
-          x.transparent = m === 'remove' || m === 'undercuts';
-          x.opacity = m === 'remove' ? 0.35 : m === 'undercuts' ? 0.55 : 1;
+          x.transparent = m === 'remove' || overlay;
+          x.opacity = m === 'remove' ? 0.35 : overlay ? 0.5 : 1;
           x.needsUpdate = true;
         }
       });
@@ -189,6 +194,61 @@ export class Viewer {
     if (this.stageMesh) this.stageMesh.visible = m === 'stage';
     if (this.removeMesh) this.removeMesh.visible = m === 'remove' || m === 'stage';
     if (this.undercutMesh) this.undercutMesh.visible = m === 'undercuts';
+    if (this.fragileMesh) this.fragileMesh.visible = m === 'fragile';
+    if (this.grainLines) this.grainLines.visible = showBlank || m === 'fragile';
+  }
+
+  setFragility(mask: Uint8Array | null, dims: VoxelDims) {
+    if (this.fragileMesh) {
+      this.scene.remove(this.fragileMesh);
+      this.fragileMesh.geometry.dispose();
+      this.fragileMesh = null;
+    }
+    let any = false;
+    if (mask) for (let i = 0; i < mask.length; i++) if (mask[i]) { any = true; break; }
+    if (any && mask) {
+      this.fragileMesh = new THREE.Mesh(
+        buildSurfaceNetsGeometry(mask, dims, { blurPasses: 0, smoothIterations: 1 }),
+        new THREE.MeshStandardMaterial({ color: 0xffcc33, emissive: 0x5c4300, emissiveIntensity: 0.6, roughness: 0.5, flatShading: false }),
+      );
+      this.scene.add(this.fragileMesh);
+    }
+    this.applyMode();
+  }
+
+  /** Draw grain-direction hatching on the blank surface. axis: 0=X,1=Y,2=Z. */
+  setGrainAxis(axis: 0 | 1 | 2) {
+    this.grainAxis = axis;
+    if (this.grainLines) {
+      this.scene.remove(this.grainLines);
+      this.grainLines.geometry.dispose();
+    }
+    const { width: w, height: h, depth: d } = this.blank;
+    const half: [number, number, number] = [w / 2, h / 2, d / 2];
+    const span = half[axis];
+    const pts: number[] = [];
+    // a few grain lines on the two most-visible faces (+Z and +X)
+    const other = [0, 1, 2].filter((a) => a !== axis);
+    for (const faceAxis of other) {
+      const inPlane = other.find((a) => a !== faceAxis)!;
+      for (let t = -0.7; t <= 0.71; t += 0.35) {
+        const a: [number, number, number] = [0, 0, 0];
+        const b: [number, number, number] = [0, 0, 0];
+        a[faceAxis] = b[faceAxis] = half[faceAxis] * 1.001;
+        a[inPlane] = b[inPlane] = t * half[inPlane];
+        a[axis] = -span;
+        b[axis] = span;
+        pts.push(...a, ...b);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    this.grainLines = new THREE.LineSegments(
+      g,
+      new THREE.LineBasicMaterial({ color: 0x8a6a3f, transparent: true, opacity: 0.4 }),
+    );
+    this.scene.add(this.grainLines);
+    this.applyMode();
   }
 
   setUndercuts(mask: Uint8Array | null, dims: VoxelDims) {

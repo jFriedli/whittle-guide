@@ -9,6 +9,7 @@ import { erode, dilate, distanceToSolid } from './distance';
 import { silhouette } from './silhouette';
 import { Mesh, triangleCount } from './mesh';
 import { blankVolume } from './blank';
+import { estimateMinFeatureMm } from './fragility';
 
 export type Rating = 'None' | 'Low' | 'Moderate' | 'High' | 'Very high';
 
@@ -118,19 +119,6 @@ function components(gIn: VoxelGrid): number[] {
   return sizes.sort((a, b) => b - a);
 }
 
-/** Smallest solid feature size, mm: 2×(largest erosion radius that keeps ≥60% volume). */
-function minFeatureMm(g: VoxelGrid): number {
-  const base = countSolid(g);
-  if (base === 0) return 0;
-  const step = (g.d[0] + g.d[1] + g.d[2]) / 3;
-  for (let r = step; r <= step * 8; r += step) {
-    const e = erode(g, r);
-    let c = 0;
-    for (let i = 0; i < e.length; i++) c += e[i];
-    if (c < base * 0.5) return Math.max(step, 2 * (r - step));
-  }
-  return step * 16;
-}
 
 /** Mirror symmetry across the X=0 plane: overlap fraction. */
 function symmetryScore(g: VoxelGrid): number {
@@ -187,7 +175,11 @@ function deepRecessScore(g: VoxelGrid): number {
 
 export function analyseCarvability(
   finalGrid: VoxelGrid,
-  analysisMeshInfo?: { mesh: Mesh; undercutFraction?: number },
+  analysisMeshInfo?: {
+    mesh: Mesh;
+    undercutFraction?: number;
+    fragility?: { minThicknessMm: number; fraction: number; crossGrainFraction: number };
+  },
 ): CarvabilityReport {
   const solidVol = countSolid(finalGrid) * voxelVolume(finalGrid);
   const blankVol = blankVolume(finalGrid.blank);
@@ -196,7 +188,8 @@ export function analyseCarvability(
   const undercuts = analysisMeshInfo?.undercutFraction ?? undercutFraction(finalGrid);
   const comps = components(finalGrid);
   const bigComps = comps.length ? comps.filter((c) => c > comps[0] * 0.02).length : 0;
-  const minFeat = minFeatureMm(finalGrid);
+  const minFeat = analysisMeshInfo?.fragility?.minThicknessMm ?? estimateMinFeatureMm(finalGrid);
+  const crossGrain = analysisMeshInfo?.fragility?.crossGrainFraction ?? 0;
   const sym = symmetryScore(finalGrid);
   const silh = silhouetteComplexity(finalGrid, analysisMeshInfo?.mesh);
   const deep = deepRecessScore(finalGrid);
@@ -229,7 +222,8 @@ export function analyseCarvability(
     ratingScore[metrics.deepRecesses] * 1.1 +
     (4 - ratingScore[metrics.symmetry]) * 0.5 +
     ratingScore[metrics.excessMaterial] * 0.4 +
-    (bigComps > 1 ? 3 : 0);
+    (bigComps > 1 ? 3 : 0) +
+    crossGrain * 3;
 
   const maxScore = 4 * 1.4 + 4 * 1.2 + 4 * 1.0 + 4 * 1.1 + 4 * 0.5 + 4 * 0.4;
   const difficulty = Math.max(1, Math.min(5, Math.round(1 + (score / maxScore) * 4)));
@@ -249,6 +243,11 @@ export function analyseCarvability(
   if (minFeat < step * 1.6) {
     warnings.push(
       `Thinnest features are about ${metrics.minFeatureMm} mm. Details this fine are fragile in most carving woods and may snap; consider scaling the blank up.`,
+    );
+  }
+  if (crossGrain > 0.12) {
+    warnings.push(
+      `A significant share of the thin features project across the grain (${Math.round(crossGrain * 100)}%). Cross-grain slivers break easily — carve them last, leave them oversize, or reorient so they run with the grain.`,
     );
   }
   if (metrics.undercuts === 'High' || metrics.undercuts === 'Very high') {

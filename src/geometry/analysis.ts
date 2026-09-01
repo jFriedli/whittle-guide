@@ -23,6 +23,7 @@ import { buildCarvingStages, verifyStageInvariant, CarvingStage } from './carvin
 import { analyseCarvability, CarvabilityReport } from './carvability';
 import { suggestRoughCuts, RoughCut } from './roughCuts';
 import { undercutMask } from './undercuts';
+import { analyseFragility, GrainAxis } from './fragility';
 import { getKernel } from './wasm';
 
 export interface ProjectionResult {
@@ -81,6 +82,10 @@ export interface AnalysisResult {
   roughCuts: RoughCut[];
   /** Surface voxels a straight knife can't reach from any axis (grid-sized mask). */
   undercuts: { mask: Uint8Array; fraction: number };
+  /** Thin / fragile solid voxels. */
+  fragility: { mask: Uint8Array; minThicknessMm: number; fraction: number; crossGrainFraction: number };
+  /** Blank axis the wood grain runs along (0=X,1=Y,2=Z). */
+  grainAxis: GrainAxis;
   /** Which geometry backend ran this analysis. */
   engine: 'wasm' | 'js';
 }
@@ -94,6 +99,10 @@ export interface AnalysisOptions {
   silhouetteResolution?: number;
   /** Pixels across the longer face axis for depth maps / contours. Default 300. */
   depthResolution?: number;
+  /** Which blank axis the grain runs along. Default 1 (Y / height). */
+  grainAxis?: GrainAxis;
+  /** How many carving stages to build (4–9). Default 9. */
+  stageCount?: number;
 }
 
 export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}): AnalysisResult {
@@ -161,11 +170,17 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     }
   }
 
-  const stages: CarvingStage[] = buildCarvingStages(grid);
+  const grainAxis = opts.grainAxis ?? 1;
+  const stages: CarvingStage[] = buildCarvingStages(grid, { stageCount: opts.stageCount });
   const stageInvariant = verifyStageInvariant(stages);
 
   const uc = undercutMask(grid);
-  const carvability = analyseCarvability(grid, { mesh: placed, undercutFraction: uc.fraction });
+  const frag = analyseFragility(grid, grainAxis);
+  const carvability = analyseCarvability(grid, {
+    mesh: placed,
+    undercutFraction: uc.fraction,
+    fragility: frag,
+  });
   const roughCuts = suggestRoughCuts(grid, Math.max(2, carvability.metrics.minFeatureMm));
 
   const blankVolumeCm3 = (blank.width * blank.height * blank.depth) / 1000;
@@ -194,6 +209,13 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
     carvability,
     roughCuts,
     undercuts: { mask: uc.mask, fraction: uc.fraction },
+    fragility: {
+      mask: frag.mask,
+      minThicknessMm: frag.minThicknessMm,
+      fraction: frag.fraction,
+      crossGrainFraction: frag.crossGrainFraction,
+    },
+    grainAxis,
     engine: getKernel() ? 'wasm' : 'js',
   };
 }

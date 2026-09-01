@@ -11,9 +11,11 @@ export interface PanelContext {
   title: string;
   contourInterval: number;
   stageIndex: number;
+  stageCount: number;
   showRoughCuts: boolean;
   onContourInterval: (mm: number) => void;
   onStage: (i: number) => void;
+  onStageCount: (n: number) => void;
   onToggleRoughCuts: (v: boolean) => void;
   onOpenGuide: () => void;
 }
@@ -165,7 +167,14 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
       node.addEventListener('click', () => ctx.onStage(i));
       timeline.append(node);
     });
+    const countSel = el('div', { class: 'segmented' });
+    for (const n of [4, 6, 9]) {
+      const b = el('button', { class: `seg ${ctx.stageCount === n ? 'seg--on' : ''}` }, [`${n}`]);
+      b.addEventListener('click', () => ctx.onStageCount(n));
+      countSel.append(b);
+    }
     root.append(
+      el('div', { class: 'panel__toolbar' }, [el('span', {}, ['Stages']), countSel]),
       el('div', { class: 'tl__labels' }, [el('span', {}, ['ROUGH']), el('span', {}, ['DETAIL'])]),
       timeline,
     );
@@ -220,6 +229,7 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
           fact('Difficulty', `${cav.stars}`),
           fact('Suggested skill', cav.skillLevel),
           fact('Undercuts', `${cav.metrics.undercuts} (${Math.round(a.undercuts.fraction * 100)}% of surface — see the Undercuts view)`),
+          fact('Thinnest feature', `${a.fragility.minThicknessMm} mm${a.fragility.crossGrainFraction > 0.05 ? ` · ${Math.round(a.fragility.crossGrainFraction * 100)}% across the grain` : ''} — see the Fragile features view`),
           fact('Thin features', `${cav.metrics.thinFeatures} (min ≈ ${cav.metrics.minFeatureMm} mm)`),
           fact('Silhouette complexity', cav.metrics.silhouetteComplexity),
           fact('Deep recesses', cav.metrics.deepRecesses),

@@ -52,6 +52,8 @@ export class Workspace {
   private recomputeTimer = 0;
 
   private orientAggressive = false;
+  private grainAxis: 0 | 1 | 2 = 1;
+  private stageCount = 9;
   private tab: PanelTab = 'silhouette';
   private stageIndex = 4;
   private contourInterval = 5;
@@ -80,6 +82,7 @@ export class Workspace {
       el('div', { class: 'ctrlcard__title' }, ['Wooden blank']),
       this.dimRow(),
       this.unitRow(),
+      this.grainRow(),
       this.marginRow(),
       this.scaleRow(),
       el('div', { class: 'btnrow' }, [
@@ -139,6 +142,7 @@ export class Workspace {
     this.viewer = new Viewer(this.viewerHost);
     this.viewer.setModel(this.loaded.object);
     this.viewer.setBlank(this.blank);
+    this.viewer.setGrainAxis(this.grainAxis);
     this.viewer.setMode(this.viewMode);
     this.viewer.resetCamera();
     await this.prepareMesh();
@@ -230,10 +234,26 @@ export class Workspace {
     return el('div', { class: 'sliderrow' }, [el('span', { class: 'lbl' }, ['Scale']), s, val]);
   }
 
+  private grainRow(): HTMLElement {
+    const seg = el('div', { class: 'segmented segmented--sm' });
+    (['W', 'H', 'D'] as const).forEach((label, axis) => {
+      const b = el('button', { class: `seg ${this.grainAxis === axis ? 'seg--on' : ''}` }, [label]);
+      b.addEventListener('click', () => {
+        this.grainAxis = axis as 0 | 1 | 2;
+        seg.querySelectorAll('.seg').forEach((x) => x.classList.remove('seg--on'));
+        b.classList.add('seg--on');
+        this.viewer?.setGrainAxis(this.grainAxis);
+        this.recompute();
+      });
+      seg.append(b);
+    });
+    return el('div', { class: 'inline' }, [el('span', { class: 'lbl', title: 'Which blank axis the wood grain runs along' }, ['Grain along']), seg]);
+  }
+
   private modeRow(): HTMLElement {
     const modes: [ViewMode, string][] = [
       ['model', 'Model'], ['blankModel', 'Blank + model'], ['stage', 'Current stage'],
-      ['remove', 'Material to remove'], ['undercuts', 'Undercuts'], ['wireframe', 'Wireframe'], ['section', 'Section'],
+      ['remove', 'Material to remove'], ['undercuts', 'Undercuts'], ['fragile', 'Fragile features'], ['wireframe', 'Wireframe'], ['section', 'Section'],
     ];
     const wrap = el('div', { class: 'modewrap' });
     for (const [m, label] of modes) {
@@ -330,6 +350,8 @@ export class Workspace {
           approxCells: RESOLUTION,
           contourIntervalMm: undefined,
           depthQuantiseMm: 1,
+          grainAxis: this.grainAxis,
+          stageCount: this.stageCount,
         });
         this.analysis = result;
         this.stageIndex = Math.min(this.stageIndex, result.stages.length - 1);
@@ -356,6 +378,7 @@ export class Workspace {
     const prev = this.stageIndex > 0 ? this.analysis.stages[this.stageIndex - 1].data : null;
     this.viewer.setStage({ data: cur.data, removed: stageRemovedMask(prev, cur.data) }, dims);
     this.viewer.setUndercuts(this.analysis.undercuts.mask, dims);
+    this.viewer.setFragility(this.analysis.fragility.mask, dims);
   }
 
   private syncViewerToTab() {
@@ -383,9 +406,11 @@ export class Workspace {
         title: this.source.title,
         contourInterval: this.contourInterval,
         stageIndex: this.stageIndex,
+        stageCount: this.stageCount,
         showRoughCuts: this.showRoughCuts,
         onContourInterval: (mm) => { this.contourInterval = mm; this.renderPanelArea(); },
         onStage: (i) => { this.stageIndex = i; this.pushStageToViewer(); this.renderPanelArea(); },
+        onStageCount: (n) => { this.stageCount = n; this.stageIndex = Math.min(this.stageIndex, n - 1); this.recompute(true); },
         onToggleRoughCuts: (v) => { this.showRoughCuts = v; this.renderPanelArea(); },
         onOpenGuide: () => this.openGuide(),
       }),

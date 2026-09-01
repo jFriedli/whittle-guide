@@ -141,6 +141,15 @@ function extrudedSilhouette(g: VoxelGrid, axis: 0 | 1 | 2, padMm: number): Uint8
 
 export interface StageOptions {
   margins?: StageMargins;
+  /** Total stages including the blank and the final: 9 (default), 6 or 4. */
+  stageCount?: number;
+}
+
+/** Which of the 8 shaping constraints to keep for a given stage count. */
+function constraintSelection(stageCount: number): number[] {
+  if (stageCount <= 4) return [0, 4, 5, 7];
+  if (stageCount <= 6) return [0, 1, 2, 4, 5, 7];
+  return [0, 1, 2, 3, 4, 5, 6, 7];
 }
 
 /**
@@ -231,8 +240,10 @@ export function buildCarvingStages(finalGrid: VoxelGrid, opts: StageOptions = {}
     instruction: `Start with the full ${fmt(finalGrid.blank.width)} × ${fmt(finalGrid.blank.height)} × ${fmt(finalGrid.blank.depth)} mm blank. Mark centre lines on every face before making a cut.`,
   });
 
+  const selected = constraintSelection(opts.stageCount ?? 9).map((i) => constraints[i]);
+
   let cumulative = 0;
-  constraints.forEach((con, ci) => {
+  selected.forEach((con, ci) => {
     const region = and(prev, con.region);
     const vol = countSolid({ data: region }) * voxCm3;
     const removed = Math.max(0, prevVol - vol);
