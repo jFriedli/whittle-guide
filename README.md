@@ -223,10 +223,11 @@ Per-stage instructions are generated from *which* constraint was applied and the
   still a fine raster rather than an exact polygon boolean of the triangles, and
   depth is quantised (default 1 mm) on purpose.
 - The **carving-stage volumes** and the carvability metrics do run on a voxel
-  grid (~84 cells on the long axis). The 3-D stage preview is a smoothed
-  isosurface (Surface Nets + field blur + Laplacian) of that grid, so it reads as
-  carved wood rather than voxels; the underlying stage data is still grid
-  resolution.
+  grid (~84 cells on the long axis). The 3-D stage preview is a border-padded
+  Surface Nets isosurface of that grid with shrink-free Taubin smoothing (and a
+  fallback to an exact cube mesh if it looks degenerate), so it reads as carved
+  wood rather than voxels; the underlying stage data — and everything derived
+  from it — is still grid resolution.
 - Auto-orientation is PCA + heuristics: it stands up figures/busts/bottles and
   squares up tilted or Z-up models, but it can't know that a reclining animal is
   *meant* to be horizontal. Use "Auto-orient" for a stronger stand-up guess and
@@ -291,10 +292,11 @@ results:
   doesn't tip a flat/wide object onto its edge;
 - undercut detection: none on convex/box shapes, a real fraction inside an
   enclosed cavity;
+- Surface Nets rendering: full-grid volume closed on all six sides, one-voxel slab survives, final-model blob not shrunk;
 - **WASM-vs-TS parity** (`tests/wasm-parity`): voxelisation bit-identical,
   distance transform within 0.05 mm, dilation masks within 0.1%.
 
-53 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
+57 tests. CI (`.github/workflows/deploy.yml`) runs `npm test` before every deploy.
 
 ## 11. GitHub Pages deployment
 
