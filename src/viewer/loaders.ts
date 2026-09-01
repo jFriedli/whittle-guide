@@ -12,12 +12,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { Mesh } from '../geometry/mesh';
 
-export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'stl' | 'ply';
+export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'stl' | 'ply' | 'fbx' | '3mf';
 
-export const SUPPORTED_EXTENSIONS = ['.glb', '.gltf', '.obj', '.stl', '.ply'] as const;
+export const SUPPORTED_EXTENSIONS = ['.glb', '.gltf', '.obj', '.stl', '.ply', '.fbx', '.3mf'] as const;
 
 export interface LoadedModel {
   object: THREE.Object3D;
@@ -44,6 +43,8 @@ export function formatFromName(name: string): ModelFormat | null {
   if (lower.endsWith('.obj')) return 'obj';
   if (lower.endsWith('.stl')) return 'stl';
   if (lower.endsWith('.ply')) return 'ply';
+  if (lower.endsWith('.fbx')) return 'fbx';
+  if (lower.endsWith('.3mf')) return '3mf';
   return null;
 }
 
@@ -106,6 +107,7 @@ async function parse(format: ModelFormat, data: ArrayBuffer, url?: string): Prom
       return new THREE.Mesh(geom, material);
     }
     case 'ply': {
+      const { PLYLoader } = await import('three/examples/jsm/loaders/PLYLoader.js');
       const geom = new PLYLoader().parse(data);
       if (!geom.getAttribute('position')) throw new Error('PLY file has no vertex data.');
       if (!geom.getIndex()) {
@@ -114,6 +116,14 @@ async function parse(format: ModelFormat, data: ArrayBuffer, url?: string): Prom
       if (!geom.getAttribute('normal')) geom.computeVertexNormals();
       const material = new THREE.MeshStandardMaterial({ color: 0xb0895e, roughness: 0.85, metalness: 0 });
       return new THREE.Mesh(geom, material);
+    }
+    case 'fbx': {
+      const { FBXLoader } = await import('three/examples/jsm/loaders/FBXLoader.js');
+      return new FBXLoader().parse(data, url ? url.substring(0, url.lastIndexOf('/') + 1) : '');
+    }
+    case '3mf': {
+      const { ThreeMFLoader } = await import('three/examples/jsm/loaders/3MFLoader.js');
+      return new ThreeMFLoader().parse(data);
     }
   }
 }

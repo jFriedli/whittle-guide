@@ -3,8 +3,9 @@ import { AnalysisResult } from '../geometry/analysis';
 import { buildTemplateSvg, calibrationSvg } from '../export/svgTemplate';
 import { depthToDataUrl, depthLegend } from './depthRaster';
 import { ViewName } from '../geometry/projection';
+import { horizontalSlice } from '../geometry/slice';
 
-export type PanelTab = 'silhouette' | 'depth' | 'contours' | 'roughing' | 'guide';
+export type PanelTab = 'silhouette' | 'depth' | 'contours' | 'sections' | 'roughing' | 'guide';
 
 export interface PanelContext {
   analysis: AnalysisResult;
@@ -152,6 +153,55 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
     );
     const grid = el('div', { class: 'tplgrid' });
     for (const v of ['front', 'back', 'left', 'right'] as ViewName[]) grid.append(templateFigure(ctx, v, true));
+    root.append(grid);
+  }
+
+  if (tab === 'sections') {
+    root.append(el('p', { class: 'panel__lead' }, [
+      'Horizontal cross-sections of the finished form, bottom to top — the way carvers gauge a piece. Each is drawn at 1:1 on the blank’s top face (width × depth).',
+    ]));
+    const dims = {
+      nx: a.grid.nx, ny: a.grid.ny, nz: a.grid.nz, d: a.grid.d, origin: a.grid.origin,
+    };
+    const finalData = a.stages[a.stages.length - 1].data;
+    // Confine the slices to the model's own vertical span, not the whole blank.
+    let jLo = dims.ny, jHi = -1;
+    for (let j = 0; j < dims.ny; j++) {
+      for (let k = 0; k < dims.nz && jHi < j; k++)
+        for (let i = 0; i < dims.nx; i++)
+          if (finalData[i + dims.nx * (j + dims.ny * k)]) { if (j < jLo) jLo = j; jHi = j; break; }
+    }
+    const span = Math.max(1, jHi - jLo);
+    const fracs = [0.08, 0.24, 0.4, 0.56, 0.72, 0.9].map((t) => (jLo + t * span) / (dims.ny - 1));
+
+    const grid = el('div', { class: 'tplgrid' });
+    for (const f of fracs) {
+      const s = horizontalSlice(finalData, dims, f);
+      if (s.areaMm2 <= 0) continue;
+      const w = s.extentMm[2] - s.extentMm[0];
+      const dpt = s.extentMm[3] - s.extentMm[1];
+      const svg = buildTemplateSvg({
+        view: `${s.heightMm.toFixed(0)} mm up`,
+        widthMm: s.widthMm,
+        heightMm: s.depthMm,
+        outline: s.polylines,
+        title: '',
+        subtitle: `at ${s.heightMm.toFixed(0)} mm · ${w.toFixed(0)} × ${dpt.toFixed(0)} mm · ${(s.areaMm2 / 100).toFixed(1)} cm²`,
+      });
+      const fig = el('figure', { class: 'tplfig' }, [
+        svgEl(svg),
+        el('figcaption', {}, [
+          `${s.heightMm.toFixed(0)} mm up · ${w.toFixed(0)}×${dpt.toFixed(0)} mm`,
+          (() => {
+            const dl = el('button', { class: 'linkbtn' }, ['SVG']);
+            dl.addEventListener('click', () => download(`whittleguide-section-${s.heightMm.toFixed(0)}mm.svg`, new Blob([svg], { type: 'image/svg+xml' })));
+            return dl;
+          })(),
+        ]),
+      ]);
+      fig.querySelector('.svgwrap')?.addEventListener('click', () => modal(svgEl(svg)));
+      grid.append(fig);
+    }
     root.append(grid);
   }
 

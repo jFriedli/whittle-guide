@@ -27,7 +27,7 @@ export class App {
 
   private setupDragDrop() {
     const overlay = el('div', { class: 'dropzone' }, [
-      el('div', { class: 'dropzone__inner' }, ['Drop a 3D model to load', el('span', {}, ['.glb · .gltf · .obj · .stl · .ply — stays on your device'])]),
+      el('div', { class: 'dropzone__inner' }, ['Drop a 3D model to load', el('span', {}, ['.glb · .gltf · .obj · .stl · .ply · .fbx · .3mf — stays on your device'])]),
     ]);
     this.root.append(overlay);
     let depth = 0;
@@ -99,7 +99,7 @@ export class App {
   }
 
   private pickFile() {
-    const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl,.ply', style: 'display:none' }) as HTMLInputElement;
+    const fi = el('input', { type: 'file', accept: '.glb,.gltf,.obj,.stl,.ply,.fbx,.3mf', style: 'display:none' }) as HTMLInputElement;
     fi.addEventListener('change', () => {
       if (fi.files?.[0]) this.openUpload(fi.files[0]);
     });
@@ -207,7 +207,7 @@ export class App {
       ]),
       el('h2', {}, ['What it does today']),
       el('ul', {}, [
-        el('li', {}, ['Browse real Smithsonian Open Access 3D scans, or load your own .glb / .gltf / .obj / .stl / .ply.']),
+        el('li', {}, ['Browse real Smithsonian Open Access 3D scans, or load your own .glb / .gltf / .obj / .stl / .ply / .fbx / .3mf.']),
         el('li', {}, ['Place and scale the model inside a wooden blank with real millimetre dimensions and auto-fit.']),
         el('li', {}, ['Generate 1:1 printable SVG templates for all six faces.']),
         el('li', {}, ['Compute orthographic depth maps and 2 / 5 / 10 mm contour maps.']),

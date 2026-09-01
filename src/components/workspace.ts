@@ -24,6 +24,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: 'silhouette', label: 'Silhouette' },
   { id: 'depth', label: 'Depth' },
   { id: 'contours', label: 'Contours' },
+  { id: 'sections', label: 'Sections' },
   { id: 'roughing', label: 'Roughing' },
   { id: 'guide', label: 'Guide / Print' },
 ];
