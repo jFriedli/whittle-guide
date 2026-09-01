@@ -38,7 +38,7 @@ Smithsonian; **uploaded files never leave your device**.
 | Area | Status |
 | --- | --- |
 | Smithsonian 3D museum browser (live search + 16 curated CC0 objects) | ✅ |
-| Upload `.glb` / `.gltf` (incl. Draco) / `.obj` / `.stl` | ✅ |
+| Upload (or drag-drop) `.glb` / `.gltf` (incl. Draco) / `.obj` / `.stl` / `.ply` | ✅ |
 | Interactive 3D workspace: orbit/pan/zoom, translucent blank, labelled axes | ✅ |
 | Editable blank dimensions (mm / cm), auto-fit with margin, orientation, scale | ✅ |
 | Visualisation modes: model, blank+model, current stage, material-to-remove, **undercuts**, wireframe, section | ✅ |
