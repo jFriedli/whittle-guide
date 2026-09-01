@@ -263,6 +263,7 @@ export function renderPanel(tab: PanelTab, ctx: PanelContext): HTMLElement {
       el('div', { class: 'stagecard' }, [
         el('h3', {}, [`Stage ${s.index} — ${s.name}`]),
         el('p', { class: 'instruction' }, [s.instruction]),
+        el('p', { class: 'toolhint' }, [el('strong', {}, ['Tools: ']), s.toolHint]),
         el('div', { class: 'stagefacts' }, [
           fact('Safety margin', s.marginMm === Infinity ? '—' : `${s.marginMm.toFixed(1)} mm`),
           fact('Wood remaining', `${s.volumeCm3.toFixed(0)} cm³`),

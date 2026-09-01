@@ -87,6 +87,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
       return `<section class="page stage">
         <h2>Stage ${s.index} — ${s.name}</h2>
         <p class="instruction">${s.instruction}</p>
+        <p class="toolhint"><strong>Tools:</strong> ${s.toolHint}</p>
         <ul class="facts">
           <li>Safety margin: ${s.marginMm === Infinity ? '—' : s.marginMm.toFixed(1) + ' mm'}</li>
           <li>Wood remaining: ${s.volumeCm3.toFixed(0)} cm³</li>
@@ -118,6 +119,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
   .meta td { padding: 2px 10px 2px 0; vertical-align: top; }
   .meta td:first-child { color: #7a6a52; white-space: nowrap; }
   .instruction { font-size: 15px; background: #f7f1e6; border-left: 3px solid #c8a06a; padding: 8px 10px; }
+  .toolhint { font-size: 13px; color: #4a3d29; margin: 6px 0; }
   .facts { columns: 2; font-size: 12px; color: #4a3d29; padding-left: 16px; }
   .warn { background: #fbeceb; border: 1px solid #e0a19c; border-radius: 6px; padding: 8px 12px; }
   .warn li { margin: 4px 0; }

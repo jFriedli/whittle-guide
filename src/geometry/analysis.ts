@@ -63,6 +63,8 @@ export interface StageResult {
   removedPct: number;
   cumulativeRemovedPct: number;
   instruction: string;
+  /** Which tools suit this stage, given the model's undercuts / fragility. */
+  toolHint: string;
   data: Uint8Array;
 }
 
@@ -113,6 +115,37 @@ export interface AnalysisOptions {
   grainAxis?: GrainAxis;
   /** How many carving stages to build (4–9). Default 9. */
   stageCount?: number;
+}
+
+/** Suggest hand tools for a stage from its role and the model's difficulty. */
+function stageToolHint(
+  stage: CarvingStage,
+  stageCount: number,
+  undercutFraction: number,
+  crossGrainFraction: number,
+): string {
+  if (stage.index === 0) return 'Pencil, square and marking gauge — lay out centre lines on every face.';
+
+  const last = stage.index === stageCount - 1 || stage.marginMm === 0;
+  const name = stage.name.toLowerCase();
+  const isSawStage = /block|silhouette|corner/.test(name);
+
+  if (last) {
+    let t = 'Detail knife and a 60° V-tool for crisp lines; a shallow (#3) gouge for soft transitions.';
+    if (undercutFraction > 0.05)
+      t += ' Reach the shaded undercut areas with a bent (hook) knife or a spoon gouge — a straight blade will bruise them.';
+    if (crossGrainFraction > 0.12)
+      t += ' On the across-grain parts take paring cuts only, with stop cuts first, to avoid splitting.';
+    return t;
+  }
+  if (isSawStage)
+    return 'Bow or coping saw for the straight outside cuts; a hatchet or a large flat (#3) gouge to knock off the waste. Stay proud of the line.';
+  if (/envelope/.test(name))
+    return 'Large (#5–#7) gouge and a roughing knife, working in from the corners. Keep everything oversize.';
+  if (/medium/.test(name))
+    return 'Bench knife and a medium (#5) gouge. Establish flat planes before you round anything.';
+  // near-final / anything left
+  return 'Detail knife and a shallow (#3) gouge. Pare with the grain, cut stop cuts first, no undercutting yet.';
 }
 
 /** Pick up to four representative stages (excluding the raw blank) for cut-lines. */
@@ -246,6 +279,7 @@ export function analyse(placed: Mesh, blank: Blank, opts: AnalysisOptions = {}):
       removedPct: s.removedPct,
       cumulativeRemovedPct: s.cumulativeRemovedPct,
       instruction: s.instruction,
+      toolHint: stageToolHint(s, stages.length, uc.fraction, frag.crossGrainFraction),
       data: s.data,
     })),
     stageInvariant,

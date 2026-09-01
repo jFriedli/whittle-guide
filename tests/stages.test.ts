@@ -74,6 +74,17 @@ describe('full analysis pipeline', () => {
     expect(res.solidVolumeCm3).toBeLessThan(res.blankVolumeCm3);
   });
 
+  it('every stage carries a non-empty tool hint; the last mentions a fine tool', () => {
+    const n = normalizeMesh(makePawn(), { targetSize: 100 });
+    const blank = defaultBlank();
+    const fit = autoFit(n.bounds, blank, [0, 0, 0], 4);
+    const placed = applyMatrix4(n.mesh, placementMatrix(fit.placement, n.bounds));
+    const res = analyse(placed, blank, { approxCells: 40 });
+    expect(res.stages.every((s) => s.toolHint.length > 10)).toBe(true);
+    expect(res.stages[0].toolHint).toMatch(/pencil|square|gauge/i);
+    expect(res.stages[res.stages.length - 1].toolHint).toMatch(/knife|V-tool/i);
+  });
+
   it('roughing cut-lines nest: each stage outline sits inside the previous one', () => {
     const n = normalizeMesh(makePawn(), { targetSize: 100 });
     const blank = defaultBlank();

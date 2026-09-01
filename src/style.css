@@ -211,6 +211,8 @@ h1, h2, h3 { line-height: 1.25; }
 .stagecard { background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-top: 12px; }
 .stagecard h3 { margin: 0 0 8px; }
 .instruction { background: var(--bg-3); border-left: 3px solid var(--wood); padding: 9px 12px; border-radius: 4px; font-size: 15px; }
+.toolhint { font-size: 13.5px; color: var(--text-mute); margin: 8px 0 0; }
+.toolhint strong { color: var(--text); }
 .stagefacts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 16px; margin-top: 10px; }
 .muted { color: var(--text-mute); font-size: 13px; }
 .roughcuts { margin-top: 14px; }
