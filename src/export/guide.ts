@@ -103,6 +103,9 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
   const warnings = cav.warnings.length
     ? `<div class="warn"><h3>Watch out</h3><ul>${cav.warnings.map((w) => `<li>${w}</li>`).join('')}</ul></div>`
     : '';
+  const notes = cav.notes.length
+    ? `<div class="notes"><h3>Notes</h3><ul>${cav.notes.map((n) => `<li>${n}</li>`).join('')}</ul></div>`
+    : '';
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>WhittleGuide — ${escapeHtml(project.title)}</title>
@@ -122,6 +125,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
   .toolhint { font-size: 13px; color: #4a3d29; margin: 6px 0; }
   .facts { columns: 2; font-size: 12px; color: #4a3d29; padding-left: 16px; }
   .warn { background: #fbeceb; border: 1px solid #e0a19c; border-radius: 6px; padding: 8px 12px; }
+  .notes { background: #f2f4ea; border: 1px solid #cdd6b8; border-radius: 6px; padding: 8px 12px; margin-top: 6px; }
   .warn li { margin: 4px 0; }
   .depthfig { display: inline-block; width: 48%; margin: 1%; vertical-align: top; font-size: 11px; }
   .depthfig img { width: 100%; image-rendering: pixelated; border: 1px solid #ddd; }
@@ -150,6 +154,7 @@ export function buildGuideHtml(project: GuideProject, analysis: AnalysisResult):
     <tr><td>Difficulty</td><td>${cav.stars} — ${cav.skillLevel}</td></tr>
   </table>
   ${warnings}
+  ${notes}
 </section>
 
 <section class="page">

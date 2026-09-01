@@ -173,6 +173,33 @@ function deepRecessScore(g: VoxelGrid): number {
   return solid === 0 ? 0 : deep / solid;
 }
 
+/**
+ * Wall-thickness of the solid: how far the deepest interior wood sits from the
+ * nearest surface, and how much of the volume is that deep. A thick core is a
+ * candidate for hollowing on a display piece — it cuts weight and lets the wood
+ * move as it dries instead of checking.
+ */
+function hollowingAdvice(g: VoxelGrid): { coreMm: number; coreFraction: number } | null {
+  const inv: VoxelGrid = { ...g, data: new Uint8Array(g.data.length) };
+  for (let i = 0; i < inv.data.length; i++) inv.data[i] = g.data[i] ? 0 : 1;
+  const dist = distanceToSolid(inv); // mm from each solid voxel to the nearest surface
+  let solid = 0;
+  let deep = 0;
+  let coreMm = 0;
+  for (let i = 0; i < g.data.length; i++) {
+    if (!g.data[i]) continue;
+    solid++;
+    const dmm = dist[i];
+    if (dmm > coreMm) coreMm = dmm;
+    if (dmm > 12) deep++;
+  }
+  if (solid === 0) return null;
+  const coreFraction = deep / solid;
+  const minBlank = Math.min(g.blank.width, g.blank.height, g.blank.depth);
+  if (coreMm < 16 || coreFraction < 0.05 || minBlank < 45) return null;
+  return { coreMm, coreFraction };
+}
+
 export function analyseCarvability(
   finalGrid: VoxelGrid,
   analysisMeshInfo?: {
@@ -265,6 +292,14 @@ export function analyseCarvability(
     notes.push('The figure fills only a small part of the blank — most of the work is removing bulk waste. A smaller blank would save effort.');
   }
   if (sym > 0.9) notes.push('Near-symmetric subject: you can work both sides in parallel and check one against the other.');
+
+  const hollow = hollowingAdvice(finalGrid);
+  if (hollow) {
+    notes.push(
+      `Solid core about ${Math.round(hollow.coreMm)} mm from the nearest surface (${Math.round(hollow.coreFraction * 100)}% of the volume). ` +
+        'For a display carving you can hollow it from the base or back to roughly a 10 mm wall — it cuts weight and lets the wood move as it dries instead of checking. Do this after roughing, before final shaping.',
+    );
+  }
 
   return {
     difficulty,
